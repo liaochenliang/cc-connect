@@ -3,6 +3,7 @@ package core
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"net/http"
 	"net/http/httptest"
@@ -378,6 +379,41 @@ func TestUserWorkspaceCommandContextRejectsInvalidOrUnresolvedWorkspace(t *testi
 		if _, _, _, _, err := e.commandContextWithWorkspace(p, msg); err == nil {
 			t.Fatalf("command context unexpectedly accepted session=%q user=%q", msg.SessionKey, msg.UserID)
 		}
+	}
+}
+
+func TestUserWorkspaceHeartbeatUsesUIDWorkspace(t *testing.T) {
+	e, platform, workspace, starts := newUserWorkspaceExecutionEngine(t)
+	sessionKey := "wecom:group-1:alice"
+
+	if err := e.ExecuteHeartbeat(sessionKey, "report", true); err != nil {
+		t.Fatal(err)
+	}
+	if sent := strings.Join(platform.getSent(), "\n"); !strings.Contains(sent, workspace) {
+		t.Fatalf("heartbeat output %q does not contain UID workspace %q", sent, workspace)
+	}
+	if *starts != 1 {
+		t.Fatalf("agent starts = %d, want 1", *starts)
+	}
+	if history := e.sessions.GetOrCreateActive(sessionKey).HistoryLen(); history != 0 {
+		t.Fatalf("global session history length = %d, want 0", history)
+	}
+	_, workspaceSessions, err := e.getOrCreateWorkspaceAgent(workspace)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if history := workspaceSessions.GetOrCreateActive(sessionKey).HistoryLen(); history == 0 {
+		t.Fatal("workspace session history is empty")
+	}
+	e.interactiveMu.Lock()
+	_, hasWorkspaceState := e.interactiveStates[workspace+":"+sessionKey]
+	_, hasGlobalState := e.interactiveStates[sessionKey]
+	e.interactiveMu.Unlock()
+	if !hasWorkspaceState {
+		t.Fatal("workspace interactive state is missing")
+	}
+	if hasGlobalState {
+		t.Fatal("heartbeat created a global interactive state")
 	}
 }
 
@@ -878,6 +914,72 @@ func TestUserWorkspaceAPIServerRejectsEverySocketEndpoint(t *testing.T) {
 	}
 	if relay.GetBinding("new-chat") != nil {
 		t.Fatal("relay binding changed")
+	}
+}
+
+func TestUserWorkspaceWebhookIsDisabled(t *testing.T) {
+	e, _, _, starts := newUserWorkspaceExecutionEngine(t)
+	server := NewWebhookServer(0, "", "/hook")
+	server.RegisterEngine("test", e)
+	workDir := t.TempDir()
+	tests := []struct {
+		name string
+		req  WebhookRequest
+	}{
+		{name: "prompt", req: WebhookRequest{Project: "test", SessionKey: "wecom:group-1:alice", Prompt: "blocked", Silent: true}},
+		{name: "exec", req: WebhookRequest{Project: "test", SessionKey: "wecom:group-1:alice", Exec: "touch executed", WorkDir: workDir, Silent: true}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			body, err := json.Marshal(tt.req)
+			if err != nil {
+				t.Fatal(err)
+			}
+			req := httptest.NewRequest(http.MethodPost, "/hook", bytes.NewReader(body))
+			rec := httptest.NewRecorder()
+
+			server.handleHook(rec, req)
+
+			if rec.Code != http.StatusForbidden {
+				t.Errorf("status = %d, want 403; body=%s", rec.Code, rec.Body.String())
+			}
+		})
+	}
+	if *starts != 0 {
+		t.Fatalf("agent starts = %d, want 0", *starts)
+	}
+	time.Sleep(100 * time.Millisecond)
+	if _, err := os.Stat(filepath.Join(workDir, "executed")); !os.IsNotExist(err) {
+		t.Fatalf("webhook exec was not blocked: %v", err)
+	}
+}
+
+func TestLegacyWebhookRemainsEnabled(t *testing.T) {
+	starts := 0
+	platform := &userWorkspaceTestPlatform{stubPlatformEngine: stubPlatformEngine{n: "wecom"}}
+	agent := &userWorkspacePathAgent{name: "legacy", workDir: "legacy", starts: &starts}
+	e := NewEngine("test", agent, []Platform{platform}, filepath.Join(t.TempDir(), "sessions.json"), LangEnglish)
+	t.Cleanup(e.cancel)
+	server := NewWebhookServer(0, "", "/hook")
+	server.RegisterEngine("test", e)
+	body, err := json.Marshal(WebhookRequest{Project: "test", SessionKey: "wecom:group-1:alice", Prompt: "allowed", Silent: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	req := httptest.NewRequest(http.MethodPost, "/hook", bytes.NewReader(body))
+	rec := httptest.NewRecorder()
+
+	server.handleHook(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200; body=%s", rec.Code, rec.Body.String())
+	}
+	deadline := time.Now().Add(2 * time.Second)
+	for len(platform.getSent()) == 0 && time.Now().Before(deadline) {
+		time.Sleep(10 * time.Millisecond)
+	}
+	if sent := platform.getSent(); len(sent) == 0 {
+		t.Fatal("legacy webhook did not execute prompt")
 	}
 }
 

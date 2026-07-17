@@ -26,14 +26,14 @@ type WebhookServer struct {
 
 // WebhookRequest is the JSON body for POST /hook.
 type WebhookRequest struct {
-	Event      string `json:"event,omitempty"`       // event name for logging (e.g. "git:commit")
-	Project    string `json:"project,omitempty"`      // target project; optional if single project
-	SessionKey string `json:"session_key"`            // target session key (required)
-	Prompt     string `json:"prompt,omitempty"`       // agent prompt (mutually exclusive with exec)
-	Exec       string `json:"exec,omitempty"`         // shell command (mutually exclusive with prompt)
-	WorkDir    string `json:"work_dir,omitempty"`     // working dir for exec
-	Silent     bool   `json:"silent,omitempty"`       // suppress notification
-	Payload    any    `json:"payload,omitempty"`      // arbitrary extra data; appended to prompt context
+	Event      string `json:"event,omitempty"`    // event name for logging (e.g. "git:commit")
+	Project    string `json:"project,omitempty"`  // target project; optional if single project
+	SessionKey string `json:"session_key"`        // target session key (required)
+	Prompt     string `json:"prompt,omitempty"`   // agent prompt (mutually exclusive with exec)
+	Exec       string `json:"exec,omitempty"`     // shell command (mutually exclusive with prompt)
+	WorkDir    string `json:"work_dir,omitempty"` // working dir for exec
+	Silent     bool   `json:"silent,omitempty"`   // suppress notification
+	Payload    any    `json:"payload,omitempty"`  // arbitrary extra data; appended to prompt context
 }
 
 func NewWebhookServer(port int, token, path string) *WebhookServer {
@@ -118,7 +118,10 @@ func (ws *WebhookServer) handleHook(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
-
+	if engine.userWorkspace {
+		http.Error(w, "webhook disabled while user-workspace mode is enabled", http.StatusForbidden)
+		return
+	}
 	eventName := req.Event
 	if eventName == "" {
 		eventName = "webhook"

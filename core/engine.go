@@ -2260,6 +2260,22 @@ func (e *Engine) ExecuteHeartbeat(sessionKey, prompt string, silent bool) error 
 		return fmt.Errorf("reconstruct reply context: %w", err)
 	}
 
+	agent := e.agent
+	sessions := e.sessions
+	workspaceDir := ""
+	userID := "heartbeat"
+	if e.userWorkspace {
+		workspaceDir, err = e.resolveWorkspaceForSessionKey(targetPlatform, sessionKey)
+		if err != nil {
+			return fmt.Errorf("resolve heartbeat workspace: %w", err)
+		}
+		agent, sessions, err = e.getOrCreateWorkspaceAgent(workspaceDir)
+		if err != nil {
+			return fmt.Errorf("initialize heartbeat workspace: %w", err)
+		}
+		userID = userIDFromWeComSessionKey(sessionKey)
+	}
+
 	if !silent {
 		e.send(targetPlatform, replyCtx, "💓 heartbeat")
 	}
@@ -2267,18 +2283,22 @@ func (e *Engine) ExecuteHeartbeat(sessionKey, prompt string, silent bool) error 
 	msg := &Message{
 		SessionKey: sessionKey,
 		Platform:   platformName,
-		UserID:     "heartbeat",
+		UserID:     userID,
 		UserName:   "heartbeat",
 		Content:    prompt,
 		ReplyCtx:   replyCtx,
 	}
 
-	session := e.sessions.GetOrCreateActive(sessionKey)
+	session := sessions.GetOrCreateActive(sessionKey)
 	if !session.TryLock() {
 		return fmt.Errorf("session %q is busy", sessionKey)
 	}
 
-	e.processInteractiveMessage(targetPlatform, msg, session)
+	interactiveKey := sessionKey
+	if workspaceDir != "" {
+		interactiveKey = workspaceDir + ":" + sessionKey
+	}
+	e.processInteractiveMessageWith(targetPlatform, msg, session, agent, sessions, interactiveKey, workspaceDir, sessionKey)
 	return nil
 }
 

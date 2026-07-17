@@ -7900,7 +7900,7 @@ func TestSetupMemoryFile_WritesInstructions(t *testing.T) {
 	agent := &stubMemoryAgent{memFile: memFile}
 	e := NewEngine("test", agent, []Platform{p}, "", LangEnglish)
 
-	result, baseName, err := e.setupMemoryFile()
+	result, baseName, err := e.setupMemoryFile(e.agent)
 	if result != setupOK {
 		t.Fatalf("result = %d, want setupOK; err = %v", result, err)
 	}
@@ -7925,12 +7925,12 @@ func TestSetupMemoryFile_Idempotent(t *testing.T) {
 	agent := &stubMemoryAgent{memFile: memFile}
 	e := NewEngine("test", agent, []Platform{p}, "", LangEnglish)
 
-	r1, _, _ := e.setupMemoryFile()
+	r1, _, _ := e.setupMemoryFile(e.agent)
 	if r1 != setupOK {
 		t.Fatalf("first call: result = %d, want setupOK", r1)
 	}
 
-	r2, _, _ := e.setupMemoryFile()
+	r2, _, _ := e.setupMemoryFile(e.agent)
 	if r2 != setupExists {
 		t.Fatalf("second call: result = %d, want setupExists", r2)
 	}
@@ -7948,7 +7948,7 @@ func TestSetupMemoryFile_RefreshesLegacyInstructions(t *testing.T) {
 	agent := &stubMemoryAgent{memFile: memFile}
 	e := NewEngine("test", agent, []Platform{p}, "", LangEnglish)
 
-	result, _, err := e.setupMemoryFile()
+	result, _, err := e.setupMemoryFile(e.agent)
 	if result != setupOK {
 		t.Fatalf("result = %d, want setupOK; err = %v", result, err)
 	}
@@ -7967,7 +7967,7 @@ func TestSetupMemoryFile_NativeAgent(t *testing.T) {
 	agent := &stubNativePromptAgent{}
 	e := NewEngine("test", agent, []Platform{p}, "", LangEnglish)
 
-	result, _, _ := e.setupMemoryFile()
+	result, _, _ := e.setupMemoryFile(e.agent)
 	if result != setupNative {
 		t.Fatalf("result = %d, want setupNative", result)
 	}
@@ -7978,7 +7978,7 @@ func TestSetupMemoryFile_NoMemorySupport(t *testing.T) {
 	agent := &stubAgent{}
 	e := NewEngine("test", agent, []Platform{p}, "", LangEnglish)
 
-	result, _, _ := e.setupMemoryFile()
+	result, _, _ := e.setupMemoryFile(e.agent)
 	if result != setupNoMemory {
 		t.Fatalf("result = %d, want setupNoMemory", result)
 	}

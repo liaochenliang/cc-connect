@@ -470,7 +470,7 @@ type ReferenceConfig struct {
 // ProjectConfig binds one agent (with a specific work_dir) to one or more platforms.
 type ProjectConfig struct {
 	Name    string `toml:"name"`
-	Mode    string `toml:"mode,omitempty"`     // "" or "multi-workspace"
+	Mode    string `toml:"mode,omitempty"`     // "", "multi-workspace", or "user-workspace"
 	BaseDir string `toml:"base_dir,omitempty"` // parent dir for workspaces
 	SkipGit *bool  `toml:"skip_git,omitempty"`
 	// WorkspaceInitAllowLocalPaths allows /workspace init and the conversational
@@ -1039,12 +1039,23 @@ func (c *Config) validateInternal(permissive bool) error {
 				return fmt.Errorf("config: %s.platforms[%d].type is required", prefix, j)
 			}
 		}
-		if proj.Mode == "multi-workspace" {
+		if proj.Mode == "multi-workspace" || proj.Mode == "user-workspace" {
 			if proj.BaseDir == "" {
-				return fmt.Errorf("project %q: multi-workspace mode requires base_dir", proj.Name)
+				return fmt.Errorf("project %q: %s mode requires base_dir", proj.Name, proj.Mode)
 			}
 			if _, ok := proj.Agent.Options["work_dir"]; ok {
-				return fmt.Errorf("project %q: multi-workspace mode conflicts with agent work_dir (use base_dir instead)", proj.Name)
+				return fmt.Errorf("project %q: %s mode conflicts with agent work_dir (use base_dir instead)", proj.Name, proj.Mode)
+			}
+		}
+		if proj.Mode == "user-workspace" {
+			for _, platform := range proj.Platforms {
+				if platform.Type != "wecom" {
+					return fmt.Errorf("project %q: user-workspace mode requires wecom platforms", proj.Name)
+				}
+				mode, _ := platform.Options["mode"].(string)
+				if mode != "websocket" {
+					return fmt.Errorf("project %q: user-workspace mode requires wecom websocket mode", proj.Name)
+				}
 			}
 		}
 		if proj.ResetOnIdleMins != nil && *proj.ResetOnIdleMins < 0 {

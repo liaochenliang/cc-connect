@@ -189,6 +189,68 @@ func TestConfigValidate(t *testing.T) {
 	}
 }
 
+func TestValidateUserWorkspace(t *testing.T) {
+	t.Run("requires base_dir", func(t *testing.T) {
+		p := validProject("demo")
+		p.Mode = "user-workspace"
+		delete(p.Agent.Options, "work_dir")
+		cfg := Config{Projects: []ProjectConfig{p}}
+		if err := cfg.validate(); err == nil || !strings.Contains(err.Error(), "requires base_dir") {
+			t.Fatalf("Validate() error = %v, want requires base_dir", err)
+		}
+	})
+	t.Run("rejects work_dir", func(t *testing.T) {
+		p := validProject("demo")
+		p.Mode, p.BaseDir = "user-workspace", "/tmp/workspaces"
+		p.Agent.Options["work_dir"] = "/tmp/shared"
+		cfg := Config{Projects: []ProjectConfig{p}}
+		if err := cfg.validate(); err == nil || !strings.Contains(err.Error(), "conflicts with agent work_dir") {
+			t.Fatalf("Validate() error = %v, want work_dir conflict", err)
+		}
+	})
+	t.Run("only accepts wecom", func(t *testing.T) {
+		p := validProject("demo")
+		p.Mode, p.BaseDir = "user-workspace", "/tmp/workspaces"
+		delete(p.Agent.Options, "work_dir")
+		p.Platforms[0].Type = "slack"
+		cfg := Config{Projects: []ProjectConfig{p}}
+		if err := cfg.validate(); err == nil || !strings.Contains(err.Error(), "requires wecom platforms") {
+			t.Fatalf("Validate() error = %v, want wecom-only error", err)
+		}
+	})
+	t.Run("requires websocket mode", func(t *testing.T) {
+		tests := []struct {
+			name    string
+			options map[string]any
+		}{
+			{name: "missing", options: map[string]any{}},
+			{name: "webhook", options: map[string]any{"mode": "webhook"}},
+		}
+		for _, tt := range tests {
+			t.Run(tt.name, func(t *testing.T) {
+				p := validProject("demo")
+				p.Mode, p.BaseDir = "user-workspace", "/tmp/workspaces"
+				delete(p.Agent.Options, "work_dir")
+				p.Platforms[0] = PlatformConfig{Type: "wecom", Options: tt.options}
+				cfg := Config{Projects: []ProjectConfig{p}}
+				if err := cfg.validate(); err == nil || !strings.Contains(err.Error(), "requires wecom websocket mode") {
+					t.Fatalf("Validate() error = %v, want websocket-mode error for options %#v", err, tt.options)
+				}
+			})
+		}
+	})
+	t.Run("accepts wecom", func(t *testing.T) {
+		p := validProject("demo")
+		p.Mode, p.BaseDir = "user-workspace", "/tmp/workspaces"
+		delete(p.Agent.Options, "work_dir")
+		p.Platforms[0] = PlatformConfig{Type: "wecom", Options: map[string]any{"mode": "websocket"}}
+		cfg := Config{Projects: []ProjectConfig{p}}
+		if err := cfg.validate(); err != nil {
+			t.Fatalf("validate() error = %v", err)
+		}
+	})
+}
+
 func TestRunAsEnv_RejectsDangerousVars(t *testing.T) {
 	dangerous := []string{"PATH", "path", "LD_PRELOAD", "HOME", "USER", "SHELL", "SUDO_USER", "SUDO_COMMAND", "LD_LIBRARY_PATH", "DYLD_INSERT_LIBRARIES"}
 	for _, v := range dangerous {

@@ -89,24 +89,43 @@ func NewAPIServer(dataDir string) (*APIServer, error) {
 		engines:            make(map[string]*Engine),
 		maxAttachmentBytes: DefaultMaxAttachmentSize,
 	}
-	s.mux.HandleFunc("/send", s.handleSend)
-	s.mux.HandleFunc("/sessions", s.handleSessions)
-	s.mux.HandleFunc("/cron/add", s.handleCronAdd)
-	s.mux.HandleFunc("/cron/list", s.handleCronList)
-	s.mux.HandleFunc("/cron/info", s.handleCronInfo)
-	s.mux.HandleFunc("/cron/edit", s.handleCronEdit)
-	s.mux.HandleFunc("/cron/del", s.handleCronDel)
-	s.mux.HandleFunc("/timer/add", s.handleTimerAdd)
-	s.mux.HandleFunc("/timer/list", s.handleTimerList)
-	s.mux.HandleFunc("/timer/info", s.handleTimerInfo)
-	s.mux.HandleFunc("/timer/del", s.handleTimerDel)
-	s.mux.HandleFunc("/cron/exec", s.handleCronExec)
-	s.mux.HandleFunc("/cron/run", s.handleCronExec)
-	s.mux.HandleFunc("/relay/send", s.handleRelaySend)
-	s.mux.HandleFunc("/relay/bind", s.handleRelayBind)
-	s.mux.HandleFunc("/relay/binding", s.handleRelayBinding)
+	s.mux.HandleFunc("/send", s.blockForUserWorkspaces(s.handleSend))
+	s.mux.HandleFunc("/sessions", s.blockForUserWorkspaces(s.handleSessions))
+	s.mux.HandleFunc("/cron/add", s.blockForUserWorkspaces(s.handleCronAdd))
+	s.mux.HandleFunc("/cron/list", s.blockForUserWorkspaces(s.handleCronList))
+	s.mux.HandleFunc("/cron/info", s.blockForUserWorkspaces(s.handleCronInfo))
+	s.mux.HandleFunc("/cron/edit", s.blockForUserWorkspaces(s.handleCronEdit))
+	s.mux.HandleFunc("/cron/del", s.blockForUserWorkspaces(s.handleCronDel))
+	s.mux.HandleFunc("/timer/add", s.blockForUserWorkspaces(s.handleTimerAdd))
+	s.mux.HandleFunc("/timer/list", s.blockForUserWorkspaces(s.handleTimerList))
+	s.mux.HandleFunc("/timer/info", s.blockForUserWorkspaces(s.handleTimerInfo))
+	s.mux.HandleFunc("/timer/del", s.blockForUserWorkspaces(s.handleTimerDel))
+	s.mux.HandleFunc("/cron/exec", s.blockForUserWorkspaces(s.handleCronExec))
+	s.mux.HandleFunc("/cron/run", s.blockForUserWorkspaces(s.handleCronExec))
+	s.mux.HandleFunc("/relay/send", s.blockForUserWorkspaces(s.handleRelaySend))
+	s.mux.HandleFunc("/relay/bind", s.blockForUserWorkspaces(s.handleRelayBind))
+	s.mux.HandleFunc("/relay/binding", s.blockForUserWorkspaces(s.handleRelayBinding))
 
 	return s, nil
+}
+
+func (s *APIServer) blockForUserWorkspaces(next http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		s.mu.RLock()
+		blocked := false
+		for _, engine := range s.engines {
+			if engine != nil && engine.userWorkspace {
+				blocked = true
+				break
+			}
+		}
+		s.mu.RUnlock()
+		if blocked {
+			http.Error(w, "local API disabled while user-workspace mode is enabled", http.StatusForbidden)
+			return
+		}
+		next(w, r)
+	}
 }
 
 func (s *APIServer) SocketPath() string {

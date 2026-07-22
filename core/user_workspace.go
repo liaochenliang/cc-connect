@@ -119,6 +119,7 @@ func (e *Engine) resolveSelectedUserWorkspaceLocked(userID string) (string, erro
 	}
 	if err := validateUserWorkspaceBaseDir(e.baseDir); err != nil {
 		delete(e.userWorkspaceSelections, userID)
+		e.workspaceBindings.Unbind("project:"+e.name, workspaceChannelKey("wecom", userID))
 		return "", &userSharedWorkspaceUnavailableError{Name: name, Err: err}
 	}
 	info, err := os.Lstat(path)

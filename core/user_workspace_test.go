@@ -235,6 +235,9 @@ func TestUserSharedWorkspaceSelectionClearsWhenBaseDirBecomesSymlink(t *testing.
 	if got := e.selectedUserSharedWorkspace("alice"); got != "" {
 		t.Fatalf("selection = %q, want cleared", got)
 	}
+	if binding := e.workspaceBindings.ListByProject("project:test")[workspaceChannelKey("wecom", "alice")]; binding != nil {
+		t.Fatalf("binding = %#v, want removed", binding)
+	}
 }
 
 func TestUserSharedWorkspaceSelectionUsesUserIDAcrossChats(t *testing.T) {

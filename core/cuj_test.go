@@ -33,6 +33,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
@@ -67,6 +68,7 @@ type cujAgent struct {
 	nextSessionEvents    []Event
 	nextSessionDelayMs   int
 }
+
 
 func (a *cujAgent) Name() string { return "cuj" }
 
@@ -1924,6 +1926,86 @@ func TestCUJ_H3_SharedSessionLinkedToIntegration(t *testing.T) {
 	t.Log("CUJ-H3: covered by release-gate TestCC_SESSION_01_share_session")
 }
 
+// CUJ-H4 · A user's shared-workspace selection follows them across chats,
+// while other users keep their own private workspace and session history.
+func TestCUJ_H4_UserSharedWorkspaceSelection(t *testing.T) {
+	agentName := "cuj-user-shared-" + strings.ReplaceAll(t.Name(), "/", "-")
+	starts := 0
+	RegisterAgent(agentName, func(opts map[string]any) (Agent, error) {
+		workDir, _ := opts["work_dir"].(string)
+		return &userWorkspacePathAgent{name: agentName, workDir: workDir, starts: &starts}, nil
+	})
+
+	platform := &userWorkspaceTestPlatform{stubPlatformEngine: stubPlatformEngine{n: "wecom"}}
+	baseDir := t.TempDir()
+	sharedDir := filepath.Join(baseDir, "medialab")
+	if err := os.Mkdir(sharedDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	baseAgent := &userWorkspacePathAgent{name: agentName, workDir: "global", starts: &starts}
+	engine := NewEngine("test", baseAgent, []Platform{platform}, filepath.Join(t.TempDir(), "sessions.json"), LangChinese)
+	t.Cleanup(engine.cancel)
+	engine.SetUserWorkspace(baseDir, filepath.Join(t.TempDir(), "bindings.json"))
+	if err := engine.SetUserSharedWorkspaces([]string{"medialab"}); err != nil {
+		t.Fatal(err)
+	}
+
+	send := func(chatID, userID, content string) {
+		t.Helper()
+		engine.ReceiveMessage(platform, &Message{
+			Platform: "wecom", SessionKey: "wecom:" + chatID + ":" + userID,
+			MessageID: "msg-" + chatID + "-" + userID + "-" + content,
+			UserID:    userID, UserName: userID, Content: content, ReplyCtx: chatID,
+		})
+	}
+	waitFor := func(needle string) {
+		t.Helper()
+		deadline := time.Now().Add(2 * time.Second)
+		for time.Now().Before(deadline) {
+			if strings.Contains(strings.Join(platform.getSent(), "\n"), needle) {
+				return
+			}
+			time.Sleep(10 * time.Millisecond)
+		}
+		t.Fatalf("reply missing %q: %v", needle, platform.getSent())
+	}
+
+	send("group-1", "alice", "/medialab")
+	waitFor("已切换到共享工作区")
+	platform.clearSent()
+
+	send("group-2", "alice", "shared task")
+	waitFor(normalizeWorkspacePath(sharedDir))
+	platform.clearSent()
+
+	send("group-1", "bob", "bob task")
+	bobDir, err := ensureUserWorkspaceDir(baseDir, "bob")
+	if err != nil {
+		t.Fatal(err)
+	}
+	waitFor(bobDir)
+	platform.clearSent()
+
+	send("group-2", "alice", "/user")
+	waitFor("已切换到用户工作区")
+	platform.clearSent()
+
+	send("group-1", "alice", "private task")
+	aliceDir, err := ensureUserWorkspaceDir(baseDir, "alice")
+	if err != nil {
+		t.Fatal(err)
+	}
+	waitFor(aliceDir)
+	platform.clearSent()
+
+	send("group-1", "alice", "/medialab")
+	waitFor("已切换到共享工作区")
+	platform.clearSent()
+
+	send("group-2", "alice", "/history 10")
+	waitFor("shared task")
+}
+
 // ===========================================================================
 // SPRINT 2 · I organization (UI rendering correctness)
 // ===========================================================================
@@ -2325,4 +2407,3 @@ func TestCUJ_STREAM1_StreamingResumesAfterPermissionPrompt(t *testing.T) {
 		}
 	}
 }
-

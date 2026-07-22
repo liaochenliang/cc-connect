@@ -705,9 +705,25 @@ level = "info" # debug, info, warn, error
 # bot_token = "xoxb-..."
 # app_token = "xapp-..."
 #
+# User workspace mode (WeCom WebSocket only):
+#
+# [[projects]]
+# name = "claude-users"
 # mode = "user-workspace"
 # base_dir = "/data/workspaces"
 # shared_workspaces = ["medialab", "designlab"]
+#
+# [projects.agent]
+# type = "claudecode"
+# [projects.agent.options]
+# mode = "yolo"
+#
+# [[projects.platforms]]
+# type = "wecom"
+# [projects.platforms.options]
+# mode = "websocket"
+# bot_id = "your-bot-id"
+# bot_secret = "your-bot-secret"
 #
 # Shared directories must already exist as real directories:
 #   /data/workspaces/medialab

@@ -414,7 +414,6 @@ func main() {
 		workDir, _ := proj.Agent.Options["work_dir"].(string)
 		projectState := core.NewProjectStateStore(projectStatePath(cfg.DataDir, proj.Name))
 		effectiveWorkDir := applyProjectStateOverride(proj.Name, agent, workDir, projectState)
-		startInitialRefreshIfReady(agent, providerWiring)
 		sessionFile := sessionStorePath(cfg.DataDir, proj.Name, effectiveWorkDir)
 
 		// Parse language setting
@@ -504,6 +503,7 @@ func main() {
 			}
 			slog.Info("multi-workspace mode enabled", "project", proj.Name, "base_dir", baseDir)
 		}
+		startInitialRefreshIfReady(agent, providerWiring)
 
 		// Wire terminal observation (--observe / [projects.observe])
 		observeEnabled := *observeFlag

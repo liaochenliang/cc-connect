@@ -251,6 +251,48 @@ func TestValidateUserWorkspace(t *testing.T) {
 	})
 }
 
+func TestValidateUserSharedWorkspaces(t *testing.T) {
+	newProject := func() ProjectConfig {
+		p := validProject("demo")
+		p.Mode = "user-workspace"
+		p.BaseDir = "/tmp/workspaces"
+		delete(p.Agent.Options, "work_dir")
+		p.Platforms[0] = PlatformConfig{Type: "wecom", Options: map[string]any{"mode": "websocket"}}
+		return p
+	}
+
+	t.Run("accepts lowercase names", func(t *testing.T) {
+		p := newProject()
+		p.SharedWorkspaces = []string{"medialab", "design-lab", "lab_2"}
+		if err := (&Config{Projects: []ProjectConfig{p}}).validate(); err != nil {
+			t.Fatalf("validate() error = %v", err)
+		}
+	})
+
+	for _, tc := range []struct {
+		name  string
+		mode  string
+		items []string
+		want  string
+	}{
+		{name: "requires user workspace mode", mode: "multi-workspace", items: []string{"medialab"}, want: "only valid in user-workspace mode"},
+		{name: "rejects uppercase", mode: "user-workspace", items: []string{"MediaLab"}, want: "invalid shared workspace name"},
+		{name: "rejects path separators", mode: "user-workspace", items: []string{"team/lab"}, want: "invalid shared workspace name"},
+		{name: "rejects user", mode: "user-workspace", items: []string{"user"}, want: "reserved"},
+		{name: "rejects duplicates", mode: "user-workspace", items: []string{"medialab", "medialab"}, want: "duplicate"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			p := newProject()
+			p.Mode = tc.mode
+			p.SharedWorkspaces = tc.items
+			err := (&Config{Projects: []ProjectConfig{p}}).validate()
+			if err == nil || !strings.Contains(err.Error(), tc.want) {
+				t.Fatalf("validate() error = %v, want %q", err, tc.want)
+			}
+		})
+	}
+}
+
 func TestRunAsEnv_RejectsDangerousVars(t *testing.T) {
 	dangerous := []string{"PATH", "path", "LD_PRELOAD", "HOME", "USER", "SHELL", "SUDO_USER", "SUDO_COMMAND", "LD_LIBRARY_PATH", "DYLD_INSERT_LIBRARIES"}
 	for _, v := range dangerous {

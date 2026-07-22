@@ -469,10 +469,11 @@ type ReferenceConfig struct {
 
 // ProjectConfig binds one agent (with a specific work_dir) to one or more platforms.
 type ProjectConfig struct {
-	Name    string `toml:"name"`
-	Mode    string `toml:"mode,omitempty"`     // "", "multi-workspace", or "user-workspace"
-	BaseDir string `toml:"base_dir,omitempty"` // parent dir for workspaces
-	SkipGit *bool  `toml:"skip_git,omitempty"`
+	Name             string   `toml:"name"`
+	Mode             string   `toml:"mode,omitempty"`     // "", "multi-workspace", or "user-workspace"
+	BaseDir          string   `toml:"base_dir,omitempty"` // parent dir for workspaces
+	SharedWorkspaces []string `toml:"shared_workspaces,omitempty"`
+	SkipGit          *bool    `toml:"skip_git,omitempty"`
 	// WorkspaceInitAllowLocalPaths allows /workspace init and the conversational
 	// init flow to bind existing local directories. Default false keeps init
 	// limited to git URLs; use /workspace bind or /workspace route for explicit
@@ -1003,6 +1004,31 @@ func (c *Config) validate() error {
 	return c.validateInternal(false)
 }
 
+var userSharedWorkspaceNamePattern = regexp.MustCompile(`^[a-z0-9][a-z0-9_-]*$`)
+
+func validateUserSharedWorkspaces(prefix, mode string, names []string) error {
+	if len(names) == 0 {
+		return nil
+	}
+	if mode != "user-workspace" {
+		return fmt.Errorf("config: %s.shared_workspaces is only valid in user-workspace mode", prefix)
+	}
+	seen := make(map[string]struct{}, len(names))
+	for _, name := range names {
+		if !userSharedWorkspaceNamePattern.MatchString(name) {
+			return fmt.Errorf("config: %s has invalid shared workspace name %q", prefix, name)
+		}
+		if name == "user" {
+			return fmt.Errorf("config: %s shared workspace name %q is reserved", prefix, name)
+		}
+		if _, ok := seen[name]; ok {
+			return fmt.Errorf("config: %s has duplicate shared workspace name %q", prefix, name)
+		}
+		seen[name] = struct{}{}
+	}
+	return nil
+}
+
 func (c *Config) validateInternal(permissive bool) error {
 	if err := validateDisplayConfig("display", &c.Display); err != nil {
 		return err
@@ -1063,6 +1089,9 @@ func (c *Config) validateInternal(permissive bool) error {
 		}
 		if proj.AgentSessionIdleTimeoutMins != nil && *proj.AgentSessionIdleTimeoutMins < 0 {
 			return fmt.Errorf("config: %s.agent_session_idle_timeout_mins must be >= 0", prefix)
+		}
+		if err := validateUserSharedWorkspaces(prefix, proj.Mode, proj.SharedWorkspaces); err != nil {
+			return err
 		}
 		if err := validateRunAsUser(prefix, proj.RunAsUser); err != nil {
 			return err

@@ -268,6 +268,118 @@ func TestUserSharedWorkspaceSelectionUsesUserIDAcrossChats(t *testing.T) {
 	}
 }
 
+func TestUserWorkspaceSelectionCommandsAreCaseInsensitiveAndPerUser(t *testing.T) {
+	e, platform, aliceUserWorkspace, _ := newUserWorkspaceExecutionEngine(t)
+	shared := configureUserSharedWorkspace(t, e, "medialab")
+	alice := &Message{Platform: "wecom", SessionKey: "wecom:group-1:alice", UserID: "alice", ReplyCtx: "ctx"}
+
+	if !e.handleCommand(platform, alice, "/MediaLab") {
+		t.Fatal("/MediaLab was not consumed")
+	}
+	if got := e.selectedUserSharedWorkspace("alice"); got != "medialab" {
+		t.Fatalf("alice selection = %q", got)
+	}
+	otherChat := &Message{Platform: "wecom", SessionKey: "wecom:private-2:alice", UserID: "alice"}
+	if got, err := e.prepareUserWorkspace(otherChat); err != nil || got != shared {
+		t.Fatalf("alice other chat workspace = %q, %v; want %q", got, err, shared)
+	}
+	bob := &Message{Platform: "wecom", SessionKey: "wecom:group-1:bob", UserID: "bob"}
+	if got, err := e.prepareUserWorkspace(bob); err != nil || got == shared {
+		t.Fatalf("bob workspace = %q, %v; must remain private", got, err)
+	}
+	if !e.handleCommand(platform, alice, "/USER") {
+		t.Fatal("/USER was not consumed")
+	}
+	if got, err := e.prepareUserWorkspace(alice); err != nil || got != aliceUserWorkspace {
+		t.Fatalf("alice /user workspace = %q, %v; want %q", got, err, aliceUserWorkspace)
+	}
+}
+
+func TestUserWorkspaceSelectionRejectsBusySessionInAnotherChat(t *testing.T) {
+	e, platform, workspace, _ := newUserWorkspaceExecutionEngine(t)
+	e.i18n = NewI18n(LangChinese)
+	configureUserSharedWorkspace(t, e, "medialab")
+	_, sessions, err := e.getOrCreateWorkspaceAgent(workspace)
+	if err != nil {
+		t.Fatal(err)
+	}
+	busyKey := "wecom:group-2:alice"
+	busy := sessions.GetOrCreateActive(busyKey)
+	if !busy.TryLock() {
+		t.Fatal("failed to mark session busy")
+	}
+	defer busy.Unlock()
+
+	msg := &Message{Platform: "wecom", SessionKey: "wecom:group-1:alice", UserID: "alice", ReplyCtx: "ctx"}
+	e.handleCommand(platform, msg, "/medialab")
+	if got := e.selectedUserSharedWorkspace("alice"); got != "" {
+		t.Fatalf("selection changed while another chat was busy: %q", got)
+	}
+	if sent := strings.Join(platform.getSent(), "\n"); !strings.Contains(sent, "请先执行 `/stop`") {
+		t.Fatalf("busy reply = %q", sent)
+	}
+}
+
+func TestUserSharedWorkspaceMissingConsumesCurrentMessage(t *testing.T) {
+	e, platform, _, starts := newUserWorkspaceExecutionEngine(t)
+	e.i18n = NewI18n(LangChinese)
+	shared := configureUserSharedWorkspace(t, e, "medialab")
+	msg := &Message{Platform: "wecom", SessionKey: "wecom:group-1:alice", UserID: "alice", ReplyCtx: "ctx"}
+	if _, err := e.switchUserWorkspace(msg, "medialab"); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Remove(shared); err != nil {
+		t.Fatal(err)
+	}
+	before := *starts
+	e.handleMessage(platform, &Message{
+		Platform: "wecom", SessionKey: "wecom:group-1:alice", UserID: "alice",
+		Content: "must not run in /user", ReplyCtx: "ctx",
+	})
+	if *starts != before {
+		t.Fatalf("agent starts = %d, want unchanged %d", *starts, before)
+	}
+	if sent := strings.Join(platform.getSent(), "\n"); !strings.Contains(sent, "已切回 `/user`") {
+		t.Fatalf("missing workspace reply = %q", sent)
+	}
+}
+
+func TestUserWorkspaceSelectionCommandsBypassAliasAndPreserveSessions(t *testing.T) {
+	e, platform, userWorkspace, _ := newUserWorkspaceExecutionEngine(t)
+	shared := configureUserSharedWorkspace(t, e, "medialab")
+	e.AddAlias("/medialab", "/new")
+	if got := e.resolveAlias("/medialab"); got != "/medialab" {
+		t.Fatalf("resolveAlias = %q, want workspace command unchanged", got)
+	}
+
+	msg := &Message{Platform: "wecom", SessionKey: "wecom:group-1:alice", UserID: "alice", ReplyCtx: "ctx"}
+	e.handleCommand(platform, msg, "/medialab")
+	_, sharedSessions, err := e.getOrCreateWorkspaceAgent(shared)
+	if err != nil {
+		t.Fatal(err)
+	}
+	sharedBefore := sharedSessions.GetOrCreateActive(msg.SessionKey).ID
+	e.cmdNew(platform, msg, nil)
+	sharedAfter := sharedSessions.GetOrCreateActive(msg.SessionKey).ID
+	if sharedAfter == sharedBefore {
+		t.Fatal("/new did not rotate the medialab session")
+	}
+
+	e.handleCommand(platform, msg, "/user")
+	_, userSessions, err := e.getOrCreateWorkspaceAgent(userWorkspace)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := sharedSessions.GetOrCreateActive(msg.SessionKey).ID; got != sharedAfter {
+		t.Fatalf("switching to /user changed medialab session from %q to %q", sharedAfter, got)
+	}
+	userBefore := userSessions.GetOrCreateActive(msg.SessionKey).ID
+	e.cmdNew(platform, msg, nil)
+	if got := userSessions.GetOrCreateActive(msg.SessionKey).ID; got == userBefore {
+		t.Fatal("/new did not rotate the user workspace session")
+	}
+}
+
 func TestSwitchUserWorkspaceKeepsSelectionAndBindingConsistent(t *testing.T) {
 	baseDir := t.TempDir()
 	e := NewEngine("test", nil, nil, "", LangChinese)

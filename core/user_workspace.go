@@ -2,6 +2,7 @@ package core
 
 import (
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -109,6 +110,87 @@ func (e *Engine) selectedUserSharedWorkspace(userID string) string {
 	e.userWorkspaceMu.RLock()
 	defer e.userWorkspaceMu.RUnlock()
 	return e.userWorkspaceSelections[userID]
+}
+
+func (e *Engine) matchUserWorkspaceSelectionCommand(cmd string) (string, bool) {
+	if !e.userWorkspace {
+		return "", false
+	}
+	cmd = strings.ToLower(strings.TrimPrefix(cmd, "/"))
+	e.userWorkspaceMu.RLock()
+	defer e.userWorkspaceMu.RUnlock()
+	if len(e.userSharedWorkspaces) == 0 {
+		return "", false
+	}
+	if cmd == "user" {
+		return "", true
+	}
+	_, ok := e.userSharedWorkspaces[cmd]
+	return cmd, ok
+}
+
+func (e *Engine) userHasBusyWorkspaceSession(userID string) bool {
+	if e.workspacePool == nil {
+		return false
+	}
+	// ponytail: workspace/session counts are small; add an index only if this scan is measured hot.
+	for _, state := range e.workspacePool.All() {
+		state.mu.Lock()
+		sessions := state.sessions
+		state.mu.Unlock()
+		if sessions == nil {
+			continue
+		}
+		idToKey, activeIDs := sessions.SessionKeyMap()
+		for sessionID, sessionKey := range idToKey {
+			if !activeIDs[sessionID] || userIDFromWeComSessionKey(sessionKey) != userID {
+				continue
+			}
+			if session := sessions.FindByID(sessionID); session != nil && session.Busy() {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func (e *Engine) handleUserWorkspaceSelectionCommand(p Platform, msg *Message, cmd string, args []string) bool {
+	target, ok := e.matchUserWorkspaceSelectionCommand(cmd)
+	if !ok {
+		return false
+	}
+	if len(args) != 0 {
+		e.reply(p, msg.ReplyCtx, e.i18n.Tf(MsgUserWsSwitchUsage, "/"+cmd))
+		return true
+	}
+	current := e.selectedUserSharedWorkspace(msg.UserID)
+	if current == target {
+		if target == "" {
+			e.reply(p, msg.ReplyCtx, e.i18n.T(MsgUserWsAlreadyUser))
+		} else {
+			e.reply(p, msg.ReplyCtx, e.i18n.Tf(MsgUserWsAlreadyShared, target))
+		}
+		return true
+	}
+	if e.userHasBusyWorkspaceSession(msg.UserID) {
+		e.reply(p, msg.ReplyCtx, e.i18n.T(MsgUserWsSwitchBusy))
+		return true
+	}
+	if _, err := e.switchUserWorkspace(msg, target); err != nil {
+		var unavailable *userSharedWorkspaceUnavailableError
+		if errors.As(err, &unavailable) {
+			e.reply(p, msg.ReplyCtx, e.i18n.Tf(MsgUserWsSharedUnavailable, unavailable.Name))
+		} else {
+			e.reply(p, msg.ReplyCtx, e.i18n.Tf(MsgWsResolutionError, err))
+		}
+		return true
+	}
+	if target == "" {
+		e.reply(p, msg.ReplyCtx, e.i18n.T(MsgUserWsSwitchedUser))
+	} else {
+		e.reply(p, msg.ReplyCtx, e.i18n.Tf(MsgUserWsSwitchedShared, target))
+	}
+	return true
 }
 
 func (e *Engine) resolveSelectedUserWorkspaceLocked(userID string) (string, error) {

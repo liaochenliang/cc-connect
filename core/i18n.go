@@ -645,6 +645,13 @@ const (
 	MsgWsInitDirNotFound        MsgKey = "ws_init_dir_not_found"
 	MsgWsInitInvalidTarget      MsgKey = "ws_init_invalid_target"
 	MsgWsInitLocalPathsDisabled MsgKey = "ws_init_local_paths_disabled"
+	MsgUserWsSwitchedShared     MsgKey = "user_ws_switched_shared"
+	MsgUserWsSwitchedUser       MsgKey = "user_ws_switched_user"
+	MsgUserWsAlreadyShared      MsgKey = "user_ws_already_shared"
+	MsgUserWsAlreadyUser        MsgKey = "user_ws_already_user"
+	MsgUserWsSwitchBusy         MsgKey = "user_ws_switch_busy"
+	MsgUserWsSharedUnavailable  MsgKey = "user_ws_shared_unavailable"
+	MsgUserWsSwitchUsage        MsgKey = "user_ws_switch_usage"
 	MsgBackgroundAutoDenied     MsgKey = "background_auto_denied"
 )
 
@@ -4191,6 +4198,55 @@ var messages = map[MsgKey]map[Language]string{
 		LangTraditionalChinese: "`/workspace init` 未啟用本機目錄目標。請使用 git 倉庫地址，或在此專案配置 `workspace_init_allow_local_paths = true`。",
 		LangJapanese:           "`/workspace init` ではローカルディレクトリ対象が無効です。git URL を使うか、このプロジェクトで `workspace_init_allow_local_paths = true` を有効にしてください。",
 		LangSpanish:            "Los destinos de directorio local están deshabilitados para `/workspace init`. Use una URL de git o habilite `workspace_init_allow_local_paths = true` para este proyecto.",
+	},
+	MsgUserWsSwitchedShared: {
+		LangEnglish:            "Switched to shared workspace: `%s`",
+		LangChinese:            "已切换到共享工作区：`%s`",
+		LangTraditionalChinese: "已切換到共享工作區：`%s`",
+		LangJapanese:           "共有ワークスペースに切り替えました：`%s`",
+		LangSpanish:            "Se cambió al workspace compartido: `%s`",
+	},
+	MsgUserWsSwitchedUser: {
+		LangEnglish:            "Switched to your user workspace.",
+		LangChinese:            "已切换到用户工作区。",
+		LangTraditionalChinese: "已切換到使用者工作區。",
+		LangJapanese:           "ユーザーワークスペースに切り替えました。",
+		LangSpanish:            "Se cambió a tu workspace de usuario.",
+	},
+	MsgUserWsAlreadyShared: {
+		LangEnglish:            "Already using shared workspace: `%s`",
+		LangChinese:            "当前已在共享工作区：`%s`",
+		LangTraditionalChinese: "目前已在共享工作區：`%s`",
+		LangJapanese:           "すでに共有ワークスペースを使用中です：`%s`",
+		LangSpanish:            "Ya estás usando el workspace compartido: `%s`",
+	},
+	MsgUserWsAlreadyUser: {
+		LangEnglish:            "Already using your user workspace.",
+		LangChinese:            "当前已在用户工作区。",
+		LangTraditionalChinese: "目前已在使用者工作區。",
+		LangJapanese:           "すでにユーザーワークスペースを使用中です。",
+		LangSpanish:            "Ya estás usando tu workspace de usuario.",
+	},
+	MsgUserWsSwitchBusy: {
+		LangEnglish:            "A task is still running. Run `/stop` before switching workspaces.",
+		LangChinese:            "当前任务正在运行，请先执行 `/stop`。",
+		LangTraditionalChinese: "目前任務正在執行，請先執行 `/stop`。",
+		LangJapanese:           "タスクを実行中です。ワークスペースを切り替える前に `/stop` を実行してください。",
+		LangSpanish:            "Hay una tarea en ejecución. Ejecuta `/stop` antes de cambiar de workspace.",
+	},
+	MsgUserWsSharedUnavailable: {
+		LangEnglish:            "Shared workspace `%s` is unavailable. Switched back to `/user`; resend your message.",
+		LangChinese:            "共享工作区 `%s` 不可用，已切回 `/user`；请重新发送消息。",
+		LangTraditionalChinese: "共享工作區 `%s` 不可用，已切回 `/user`；請重新傳送訊息。",
+		LangJapanese:           "共有ワークスペース `%s` は利用できません。`/user` に戻りました。メッセージを再送してください。",
+		LangSpanish:            "El workspace compartido `%s` no está disponible. Se volvió a `/user`; reenvía el mensaje.",
+	},
+	MsgUserWsSwitchUsage: {
+		LangEnglish:            "Usage: `%s`",
+		LangChinese:            "用法：`%s`",
+		LangTraditionalChinese: "用法：`%s`",
+		LangJapanese:           "使い方：`%s`",
+		LangSpanish:            "Uso: `%s`",
 	},
 }
 

@@ -57,6 +57,26 @@ func TestI18n_AllKeysHaveEnglish(t *testing.T) {
 	}
 }
 
+func TestI18n_UserWorkspaceSwitchMessagesHaveAllTranslations(t *testing.T) {
+	keys := []MsgKey{
+		MsgUserWsSwitchedShared,
+		MsgUserWsSwitchedUser,
+		MsgUserWsAlreadyShared,
+		MsgUserWsAlreadyUser,
+		MsgUserWsSwitchBusy,
+		MsgUserWsSharedUnavailable,
+		MsgUserWsSwitchUsage,
+	}
+	languages := []Language{LangEnglish, LangChinese, LangTraditionalChinese, LangJapanese, LangSpanish}
+	for _, key := range keys {
+		for _, lang := range languages {
+			if messages[key][lang] == "" {
+				t.Errorf("message key %q missing %s translation", key, lang)
+			}
+		}
+	}
+}
+
 func TestDetectLanguage(t *testing.T) {
 	tests := []struct {
 		text    string

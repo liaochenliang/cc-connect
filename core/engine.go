@@ -2494,6 +2494,13 @@ func (e *Engine) matchBannedWord(content string) string {
 
 // resolveAlias checks if the content (or its first word) matches an alias and replaces it.
 func (e *Engine) resolveAlias(content string) string {
+	first, _, _ := strings.Cut(content, " ")
+	if strings.HasPrefix(first, "/") {
+		if _, ok := e.matchUserWorkspaceSelectionCommand(first); ok {
+			return content
+		}
+	}
+
 	e.aliasMu.RLock()
 	defer e.aliasMu.RUnlock()
 
@@ -2913,6 +2920,11 @@ func (e *Engine) handleMessage(p Platform, msg *Message) {
 		preparedUserWorkspace, err = e.prepareUserWorkspace(msg)
 		if err != nil {
 			slog.Error("user workspace resolution failed", "user_id", msg.UserID, "err", err)
+			var unavailable *userSharedWorkspaceUnavailableError
+			if errors.As(err, &unavailable) {
+				e.reply(p, msg.ReplyCtx, e.i18n.Tf(MsgUserWsSharedUnavailable, unavailable.Name))
+				return
+			}
 			e.reply(p, msg.ReplyCtx, e.i18n.Tf(MsgWsResolutionError, err))
 			return
 		}
@@ -6446,6 +6458,10 @@ func (e *Engine) handleCommand(p Platform, msg *Message, raw string) bool {
 	parts := splitCommandArgs(raw)
 	cmd := strings.ToLower(strings.TrimPrefix(parts[0], "/"))
 	args := parts[1:]
+
+	if e.handleUserWorkspaceSelectionCommand(p, msg, cmd, args) {
+		return true
+	}
 
 	cmdID := matchPrefix(cmd, builtinCommands)
 

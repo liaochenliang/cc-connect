@@ -263,7 +263,7 @@ func TestValidateUserSharedWorkspaces(t *testing.T) {
 
 	t.Run("accepts lowercase names", func(t *testing.T) {
 		p := newProject()
-		p.SharedWorkspaces = []string{"medialab", "design-lab", "lab_2"}
+		p.SharedWorkspaces = []string{"medialab", "design-lab", "lab_2", "abc"}
 		if err := (&Config{Projects: []ProjectConfig{p}}).validate(); err != nil {
 			t.Fatalf("validate() error = %v", err)
 		}
@@ -280,6 +280,7 @@ func TestValidateUserSharedWorkspaces(t *testing.T) {
 		{name: "rejects path separators", mode: "user-workspace", items: []string{"team/lab"}, want: "invalid shared workspace name"},
 		{name: "rejects user", mode: "user-workspace", items: []string{"user"}, want: "reserved"},
 		{name: "rejects duplicates", mode: "user-workspace", items: []string{"medialab", "medialab"}, want: "duplicate"},
+		{name: "rejects encoded user directory", mode: "user-workspace", items: []string{"616c696365"}, want: "conflicts with user workspace directory"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			p := newProject()

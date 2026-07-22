@@ -102,6 +102,9 @@ func (e *Engine) SetUserSharedWorkspaces(names []string) error {
 		if name == "user" || matchPrefix(name, builtinCommands) != "" {
 			return fmt.Errorf("user-workspace: shared workspace name %q conflicts with a command", name)
 		}
+		if isEncodedUserWorkspaceName(name) {
+			return fmt.Errorf("user-workspace: shared workspace name %q conflicts with an encoded UserID directory", name)
+		}
 		path := filepath.Join(e.baseDir, name)
 		info, err := os.Lstat(path)
 		if err != nil {
@@ -154,9 +157,9 @@ func (e *Engine) userHasBusyWorkspaceSession(userID string) bool {
 		if sessions == nil {
 			continue
 		}
-		idToKey, activeIDs := sessions.SessionKeyMap()
+		idToKey, _ := sessions.SessionKeyMap()
 		for sessionID, sessionKey := range idToKey {
-			if !activeIDs[sessionID] || userIDFromWorkspaceSessionKey(workspace, sessionKey) != userID {
+			if userIDFromWorkspaceSessionKey(workspace, sessionKey) != userID {
 				continue
 			}
 			if session := sessions.FindByID(sessionID); session != nil && session.Busy() {
@@ -339,7 +342,15 @@ func (e *Engine) resolveWorkspaceForSessionKey(p Platform, sessionKey string) (s
 		return "", fmt.Errorf("user-workspace: no workspace binding for session %q", sessionKey)
 	}
 	if normalizeWorkspacePath(binding.Workspace) != workspace {
-		return "", fmt.Errorf("user-workspace: workspace binding mismatch for session %q", sessionKey)
+		e.bindUserWorkspaceLocked("wecom", userID, workspace)
 	}
 	return workspace, nil
+}
+
+func isEncodedUserWorkspaceName(name string) bool {
+	if name == "" || len(name)%2 != 0 {
+		return false
+	}
+	_, err := hex.DecodeString(name)
+	return err == nil
 }

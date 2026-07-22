@@ -10070,10 +10070,13 @@ func (e *Engine) cmdStop(p Platform, msg *Message) {
 		// Fallback: try suffix scan in case interactiveKeyForSessionKey
 		// resolved a different key than the one used to store the state
 		// (e.g. workspace binding lookup inconsistency).
-		if found := e.findInteractiveKeyForSession(msg.SessionKey); found != "" && found != iKey {
-			if e.stopInteractiveSession(found, p, msg.ReplyCtx) {
-				e.reply(p, msg.ReplyCtx, e.i18n.T(MsgExecutionStopped))
-				return
+		if !e.userWorkspace {
+			found := e.findInteractiveKeyForSession(msg.SessionKey)
+			if found != "" && found != iKey {
+				if e.stopInteractiveSession(found, p, msg.ReplyCtx) {
+					e.reply(p, msg.ReplyCtx, e.i18n.T(MsgExecutionStopped))
+					return
+				}
 			}
 		}
 		e.reply(p, msg.ReplyCtx, e.i18n.T(MsgNoExecution))
@@ -14626,7 +14629,11 @@ func (e *Engine) executeCustomCommand(p Platform, msg *Message, cmd *CustomComma
 		return
 	}
 
-	session := sessions.GetOrCreateActive(interactiveKey)
+	sessionKey := interactiveKey
+	if e.userWorkspace {
+		sessionKey = msg.SessionKey
+	}
+	session := sessions.GetOrCreateActive(sessionKey)
 	if !session.TryLock() {
 		e.reply(p, msg.ReplyCtx, e.i18n.T(MsgPreviousProcessing))
 		return
@@ -14854,7 +14861,11 @@ func (e *Engine) executeSkill(p Platform, msg *Message, skill *Skill, args []str
 		return
 	}
 
-	session := sessions.GetOrCreateActive(interactiveKey)
+	sessionKey := interactiveKey
+	if e.userWorkspace {
+		sessionKey = msg.SessionKey
+	}
+	session := sessions.GetOrCreateActive(sessionKey)
 	if !session.TryLock() {
 		e.reply(p, msg.ReplyCtx, e.i18n.T(MsgPreviousProcessing))
 		return

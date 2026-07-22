@@ -1976,11 +1976,15 @@ func TestCUJ_H4_UserSharedWorkspaceSelection(t *testing.T) {
 	waitFor("已切换到共享工作区")
 	platform.clearSent()
 
-	send("group-2", "alice", "shared task")
+	send("group-1", "alice", "shared group 1 task")
 	waitFor(normalizeWorkspacePath(sharedDir))
 	platform.clearSent()
 
-	send("group-1", "bob", "bob task")
+	send("group-2", "alice", "shared group 2 task")
+	waitFor(normalizeWorkspacePath(sharedDir))
+	platform.clearSent()
+
+	send("group-1", "bob", "bob task before alice switch")
 	bobDir, err := ensureUserWorkspaceDir(baseDir, "bob")
 	if err != nil {
 		t.Fatal(err)
@@ -1992,7 +1996,7 @@ func TestCUJ_H4_UserSharedWorkspaceSelection(t *testing.T) {
 	waitFor("已切换到用户工作区")
 	platform.clearSent()
 
-	send("group-1", "alice", "private task")
+	send("group-1", "alice", "private group 1 task")
 	aliceDir, err := ensureUserWorkspaceDir(baseDir, "alice")
 	if err != nil {
 		t.Fatal(err)
@@ -2000,12 +2004,26 @@ func TestCUJ_H4_UserSharedWorkspaceSelection(t *testing.T) {
 	waitFor(aliceDir)
 	platform.clearSent()
 
+	send("group-2", "alice", "private group 2 task")
+	waitFor(aliceDir)
+	platform.clearSent()
+
 	send("group-1", "alice", "/medialab")
 	waitFor("已切换到共享工作区")
 	platform.clearSent()
 
+	send("group-1", "alice", "/history 10")
+	waitFor("shared group 1 task")
+	if sent := strings.Join(platform.getSent(), "\n"); strings.Contains(sent, "shared group 2 task") {
+		t.Fatalf("group-1 shared history contains group-2 content: %q", sent)
+	}
+	platform.clearSent()
+
 	send("group-2", "alice", "/history 10")
-	waitFor("shared task")
+	waitFor("shared group 2 task")
+	if sent := strings.Join(platform.getSent(), "\n"); strings.Contains(sent, "shared group 1 task") {
+		t.Fatalf("group-2 shared history contains group-1 content: %q", sent)
+	}
 }
 
 // ===========================================================================

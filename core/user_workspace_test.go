@@ -188,6 +188,12 @@ func TestSetUserSharedWorkspacesValidatesDirectoriesAndCommands(t *testing.T) {
 	if err := e.SetUserSharedWorkspaces([]string{"linklab"}); err == nil {
 		t.Fatal("symlink unexpectedly accepted")
 	}
+	if err := os.Mkdir(filepath.Join(baseDir, "616c696365"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := e.SetUserSharedWorkspaces([]string{"616c696365"}); err == nil || !strings.Contains(err.Error(), "encoded UserID") {
+		t.Fatalf("encoded UserID workspace error = %v", err)
+	}
 }
 
 func TestSetUserSharedWorkspacesRejectsSymlinkBaseDir(t *testing.T) {
@@ -350,6 +356,36 @@ func TestUserWorkspaceSelectionRejectsBusyPrefixedSessionInAnotherChat(t *testin
 	e.handleCommand(platform, alice, "/medialab")
 	if got := e.selectedUserSharedWorkspace("alice"); got != "" {
 		t.Fatalf("alice selection changed while prefixed session was busy: %q", got)
+	}
+	if sent := strings.Join(platform.getSent(), "\n"); !strings.Contains(sent, "请先执行 `/stop`") {
+		t.Fatalf("busy reply = %q", sent)
+	}
+}
+
+func TestUserWorkspaceSelectionRejectsBusySideSessionInAnotherChat(t *testing.T) {
+	e, platform, workspace, _ := newUserWorkspaceExecutionEngine(t)
+	e.i18n = NewI18n(LangChinese)
+	configureUserSharedWorkspace(t, e, "medialab")
+	_, sessions, err := e.getOrCreateWorkspaceAgent(workspace)
+	if err != nil {
+		t.Fatal(err)
+	}
+	busy := sessions.NewSideSession("wecom:group-2:alice", "cron")
+	if !busy.TryLock() {
+		t.Fatal("failed to mark side session busy")
+	}
+	defer busy.Unlock()
+
+	bob := &Message{Platform: "wecom", SessionKey: "wecom:group-1:bob", UserID: "bob", ReplyCtx: "bob-ctx"}
+	e.handleCommand(platform, bob, "/medialab")
+	if got := e.selectedUserSharedWorkspace("bob"); got != "medialab" {
+		t.Fatalf("bob selection = %q, want medialab", got)
+	}
+
+	alice := &Message{Platform: "wecom", SessionKey: "wecom:group-1:alice", UserID: "alice", ReplyCtx: "alice-ctx"}
+	e.handleCommand(platform, alice, "/medialab")
+	if got := e.selectedUserSharedWorkspace("alice"); got != "" {
+		t.Fatalf("alice selection changed while side session was busy: %q", got)
 	}
 	if sent := strings.Join(platform.getSent(), "\n"); !strings.Contains(sent, "请先执行 `/stop`") {
 		t.Fatalf("busy reply = %q", sent)
@@ -692,7 +728,7 @@ func TestUserSharedWorkspaceSelectionDoesNotRestoreFromBinding(t *testing.T) {
 	if err := restarted.SetUserSharedWorkspaces([]string{"medialab"}); err != nil {
 		t.Fatal(err)
 	}
-	got, err := restarted.prepareUserWorkspace(msg)
+	got, err := restarted.resolveWorkspaceForSessionKey(restarted.platformForName("wecom"), msg.SessionKey)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -702,6 +738,10 @@ func TestUserSharedWorkspaceSelectionDoesNotRestoreFromBinding(t *testing.T) {
 	}
 	if got != want {
 		t.Fatalf("workspace after restart = %q, want /user workspace %q", got, want)
+	}
+	binding := restarted.workspaceBindings.ListByProject("project:test")[workspaceChannelKey("wecom", "alice")]
+	if binding == nil || normalizeWorkspacePath(binding.Workspace) != want {
+		t.Fatalf("binding after restart = %#v, want /user workspace %q", binding, want)
 	}
 }
 
@@ -843,15 +883,20 @@ func TestUserWorkspaceSessionRoutingUsesUIDBinding(t *testing.T) {
 	}
 }
 
-func TestUserWorkspaceStrictResolverRejectsTamperedBinding(t *testing.T) {
-	e, _, _, _ := newUserWorkspaceExecutionEngine(t)
+func TestUserWorkspaceStrictResolverReplacesTamperedBinding(t *testing.T) {
+	e, _, workspace, _ := newUserWorkspaceExecutionEngine(t)
 	sessionKey := "wecom:group-9:alice"
 	channelKey := workspaceChannelKey("wecom", "alice")
 	foreign := t.TempDir()
 	e.workspaceBindings.Bind("project:test", channelKey, "alice", foreign)
 
-	if _, err := e.resolveWorkspaceForSessionKey(e.platformForName("wecom"), sessionKey); err == nil {
-		t.Fatal("mismatched project binding unexpectedly accepted")
+	resolved, err := e.resolveWorkspaceForSessionKey(e.platformForName("wecom"), sessionKey)
+	if err != nil || resolved != workspace {
+		t.Fatalf("resolved workspace = %q, %v; want %q", resolved, err, workspace)
+	}
+	binding := e.workspaceBindings.ListByProject("project:test")[channelKey]
+	if binding == nil || normalizeWorkspacePath(binding.Workspace) != workspace {
+		t.Fatalf("binding = %#v, want workspace %q", binding, workspace)
 	}
 	foreignSessions := NewSessionManager("")
 	foreignWorkspace := e.workspacePool.GetOrCreate(normalizeWorkspacePath(foreign))
@@ -863,6 +908,80 @@ func TestUserWorkspaceStrictResolverRejectsTamperedBinding(t *testing.T) {
 	if got := e.interactiveKeyForSessionKey(sessionKey); strings.HasPrefix(got, normalizeWorkspacePath(foreign)+":") {
 		t.Fatalf("tampered binding selected foreign interactive key %q", got)
 	}
+}
+
+func TestUserWorkspaceStopDoesNotFallBackToPreviousWorkspace(t *testing.T) {
+	e, platform, userWorkspace, _ := newUserWorkspaceExecutionEngine(t)
+	configureUserSharedWorkspace(t, e, "medialab")
+	msg := &Message{Platform: "wecom", SessionKey: "wecom:group-1:alice", UserID: "alice", ReplyCtx: "ctx"}
+	oldKey := userWorkspace + ":" + msg.SessionKey
+	oldAgentSession := newControllableSession("old-user-workspace")
+	e.interactiveMu.Lock()
+	e.interactiveStates[oldKey] = &interactiveState{agentSession: oldAgentSession}
+	e.interactiveMu.Unlock()
+
+	e.handleCommand(platform, msg, "/medialab")
+	platform.clearSent()
+	e.handleCommand(platform, msg, "/stop")
+
+	e.interactiveMu.Lock()
+	_, oldStateExists := e.interactiveStates[oldKey]
+	e.interactiveMu.Unlock()
+	if !oldStateExists || !oldAgentSession.Alive() {
+		t.Fatal("/stop in medialab stopped the old /user interactive state")
+	}
+	if sent := strings.Join(platform.getSent(), "\n"); !strings.Contains(sent, e.i18n.T(MsgNoExecution)) {
+		t.Fatalf("stop reply = %q, want %q", sent, e.i18n.T(MsgNoExecution))
+	}
+}
+
+func assertUserWorkspacePromptUsesRawSessionKey(
+	t *testing.T,
+	execute func(*Engine, Platform, *Message),
+) {
+	t.Helper()
+	e, platform, workspace, _ := newUserWorkspaceExecutionEngine(t)
+	msg := &Message{Platform: "wecom", SessionKey: "wecom:group-1:alice", UserID: "alice", ReplyCtx: "ctx"}
+	_, sessions, err := e.getOrCreateWorkspaceAgent(workspace)
+	if err != nil {
+		t.Fatal(err)
+	}
+	before := sessions.GetOrCreateActive(msg.SessionKey).ID
+	e.cmdNew(platform, msg, nil)
+	after := sessions.GetOrCreateActive(msg.SessionKey)
+	if after.ID == before {
+		t.Fatal("/new did not rotate the raw session key")
+	}
+	if !after.TryLock() {
+		t.Fatal("failed to mark raw session busy")
+	}
+	defer after.Unlock()
+	platform.clearSent()
+
+	execute(e, platform, msg)
+
+	idToKey, _ := sessions.SessionKeyMap()
+	compositeKey := workspace + ":" + msg.SessionKey
+	for _, sessionKey := range idToKey {
+		if sessionKey == compositeKey {
+			t.Fatalf("prompt command created composite SessionManager key %q", compositeKey)
+		}
+	}
+	if sent := strings.Join(platform.getSent(), "\n"); !strings.Contains(sent, e.i18n.T(MsgPreviousProcessing)) {
+		t.Fatalf("prompt command did not reuse busy raw session; reply = %q", sent)
+	}
+}
+
+func TestUserWorkspaceCustomPromptUsesRawSessionKeyAfterNew(t *testing.T) {
+	assertUserWorkspacePromptUsesRawSessionKey(t, func(e *Engine, p Platform, msg *Message) {
+		e.executeCustomCommand(p, msg, &CustomCommand{Name: "review", Prompt: "review this"}, nil)
+	})
+}
+
+func TestUserWorkspaceSkillUsesRawSessionKeyAfterNew(t *testing.T) {
+	assertUserWorkspacePromptUsesRawSessionKey(t, func(e *Engine, p Platform, msg *Message) {
+		e.executeSkill(p, msg, &Skill{Name: "review", Prompt: "review this"}, nil)
+	})
 }
 
 func TestUserWorkspaceStrictResolverRejectsSharedBinding(t *testing.T) {

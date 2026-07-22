@@ -1,6 +1,7 @@
 package config
 
 import (
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"log/slog"
@@ -1006,6 +1007,14 @@ func (c *Config) validate() error {
 
 var userSharedWorkspaceNamePattern = regexp.MustCompile(`^[a-z0-9][a-z0-9_-]*$`)
 
+func isEncodedUserWorkspaceName(name string) bool {
+	if name == "" || len(name)%2 != 0 {
+		return false
+	}
+	_, err := hex.DecodeString(name)
+	return err == nil
+}
+
 func validateUserSharedWorkspaces(prefix, mode string, names []string) error {
 	if len(names) == 0 {
 		return nil
@@ -1020,6 +1029,9 @@ func validateUserSharedWorkspaces(prefix, mode string, names []string) error {
 		}
 		if name == "user" {
 			return fmt.Errorf("config: %s shared workspace name %q is reserved", prefix, name)
+		}
+		if isEncodedUserWorkspaceName(name) {
+			return fmt.Errorf("config: %s shared workspace name %q conflicts with user workspace directory (encoded UserID)", prefix, name)
 		}
 		if _, ok := seen[name]; ok {
 			return fmt.Errorf("config: %s has duplicate shared workspace name %q", prefix, name)

@@ -10067,16 +10067,17 @@ func (e *Engine) cmdStop(p Platform, msg *Message) {
 	// triggers the recycling loop from issue #830.
 	iKey := e.interactiveKeyForSessionKey(msg.SessionKey)
 	if !e.stopInteractiveSession(iKey, p, msg.ReplyCtx) {
-		// Fallback: try suffix scan in case interactiveKeyForSessionKey
-		// resolved a different key than the one used to store the state
-		// (e.g. workspace binding lookup inconsistency).
-		if !e.userWorkspace {
-			found := e.findInteractiveKeyForSession(msg.SessionKey)
-			if found != "" && found != iKey {
-				if e.stopInteractiveSession(found, p, msg.ReplyCtx) {
-					e.reply(p, msg.ReplyCtx, e.i18n.T(MsgExecutionStopped))
-					return
-				}
+		found := ""
+		if e.userWorkspace {
+			found = e.busyUserWorkspaceInteractiveKey(msg.SessionKey)
+		} else {
+			// Preserve the legacy recovery path for binding lookup inconsistencies.
+			found = e.findInteractiveKeyForSession(msg.SessionKey)
+		}
+		if found != "" && found != iKey {
+			if e.stopInteractiveSession(found, p, msg.ReplyCtx) {
+				e.reply(p, msg.ReplyCtx, e.i18n.T(MsgExecutionStopped))
+				return
 			}
 		}
 		e.reply(p, msg.ReplyCtx, e.i18n.T(MsgNoExecution))

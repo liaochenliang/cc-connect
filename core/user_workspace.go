@@ -170,6 +170,46 @@ func (e *Engine) userHasBusyWorkspaceSession(userID string) bool {
 	return false
 }
 
+func (e *Engine) busyUserWorkspaceInteractiveKey(sessionKey string) string {
+	if !e.userWorkspace || e.workspacePool == nil || sessionKey == "" {
+		return ""
+	}
+	var candidates []string
+	for workspace, state := range e.workspacePool.All() {
+		state.mu.Lock()
+		sessions := state.sessions
+		state.mu.Unlock()
+		if sessions == nil {
+			continue
+		}
+		idToKey, activeIDs := sessions.SessionKeyMap()
+		for sessionID, storedKey := range idToKey {
+			if storedKey != sessionKey && storedKey != workspace+":"+sessionKey {
+				continue
+			}
+			session := sessions.FindByID(sessionID)
+			if session == nil || !session.Busy() {
+				continue
+			}
+			baseKey := workspace + ":" + sessionKey
+			if activeIDs[sessionID] {
+				candidates = append(candidates, baseKey)
+			} else {
+				candidates = append(candidates, baseKey+"#cron:"+sessionID, baseKey+"#timer:"+sessionID)
+			}
+		}
+	}
+
+	e.interactiveMu.Lock()
+	defer e.interactiveMu.Unlock()
+	for _, candidate := range candidates {
+		if e.interactiveStates[candidate] != nil {
+			return candidate
+		}
+	}
+	return ""
+}
+
 func userIDFromWorkspaceSessionKey(workspace, sessionKey string) string {
 	if candidate, ok := strings.CutPrefix(sessionKey, workspace+":"); ok {
 		if userID := userIDFromWeComSessionKey(candidate); userID != "" {

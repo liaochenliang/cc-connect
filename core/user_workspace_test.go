@@ -935,6 +935,102 @@ func TestUserWorkspaceStopDoesNotFallBackToPreviousWorkspace(t *testing.T) {
 	}
 }
 
+func TestUserWorkspaceStopFindsBusyTurnAfterSharedWorkspaceDisappears(t *testing.T) {
+	e, platform, _, _ := newUserWorkspaceExecutionEngine(t)
+	e.i18n = NewI18n(LangChinese)
+	shared := configureUserSharedWorkspace(t, e, "medialab")
+	msg := &Message{Platform: "wecom", SessionKey: "wecom:group-1:alice", UserID: "alice", ReplyCtx: "ctx"}
+	if _, err := e.switchUserWorkspace(msg, "medialab"); err != nil {
+		t.Fatal(err)
+	}
+	_, sessions, err := e.getOrCreateWorkspaceAgent(shared)
+	if err != nil {
+		t.Fatal(err)
+	}
+	busy := sessions.GetOrCreateActive(msg.SessionKey)
+	if !busy.TryLock() {
+		t.Fatal("failed to mark shared session busy")
+	}
+	defer func() {
+		if busy.Busy() {
+			busy.Unlock()
+		}
+	}()
+	oldKey := shared + ":" + msg.SessionKey
+	e.interactiveMu.Lock()
+	e.interactiveStates[oldKey] = &interactiveState{agentSession: newControllableSession("missing-shared")}
+	e.interactiveMu.Unlock()
+	if err := os.Remove(shared); err != nil {
+		t.Fatal(err)
+	}
+
+	e.handleMessage(platform, &Message{
+		Platform: "wecom", SessionKey: msg.SessionKey, UserID: msg.UserID,
+		Content: "/stop", ReplyCtx: msg.ReplyCtx,
+	})
+	if sent := strings.Join(platform.getSent(), "\n"); !strings.Contains(sent, "已切回 `/user`") {
+		t.Fatalf("first stop reply = %q, want unavailable workspace", sent)
+	}
+	if got := e.selectedUserSharedWorkspace(msg.UserID); got != "" {
+		t.Fatalf("selection after unavailable workspace = %q, want /user", got)
+	}
+	e.interactiveMu.Lock()
+	_, oldStateExists := e.interactiveStates[oldKey]
+	e.interactiveMu.Unlock()
+	if !oldStateExists || !busy.Busy() {
+		t.Fatal("first /stop unexpectedly stopped the unavailable shared turn")
+	}
+
+	platform.clearSent()
+	e.handleMessage(platform, &Message{
+		Platform: "wecom", SessionKey: msg.SessionKey, UserID: msg.UserID,
+		Content: "/stop", ReplyCtx: msg.ReplyCtx,
+	})
+	e.interactiveMu.Lock()
+	_, oldStateExists = e.interactiveStates[oldKey]
+	e.interactiveMu.Unlock()
+	if oldStateExists {
+		t.Fatal("second /stop did not remove the busy shared interactive state")
+	}
+	if sent := strings.Join(platform.getSent(), "\n"); !strings.Contains(sent, e.i18n.T(MsgExecutionStopped)) {
+		t.Fatalf("second stop reply = %q, want %q", sent, e.i18n.T(MsgExecutionStopped))
+	}
+}
+
+func TestUserWorkspaceStopFindsBusySideSessionForCurrentChat(t *testing.T) {
+	e, platform, workspace, _ := newUserWorkspaceExecutionEngine(t)
+	msg := &Message{Platform: "wecom", SessionKey: "wecom:group-1:alice", UserID: "alice", ReplyCtx: "ctx"}
+	_, sessions, err := e.getOrCreateWorkspaceAgent(workspace)
+	if err != nil {
+		t.Fatal(err)
+	}
+	busy := sessions.NewSideSession(msg.SessionKey, "cron")
+	if !busy.TryLock() {
+		t.Fatal("failed to mark side session busy")
+	}
+	defer func() {
+		if busy.Busy() {
+			busy.Unlock()
+		}
+	}()
+	sideKey := workspace + ":" + msg.SessionKey + "#cron:" + busy.ID
+	e.interactiveMu.Lock()
+	e.interactiveStates[sideKey] = &interactiveState{agentSession: newControllableSession("busy-side")}
+	e.interactiveMu.Unlock()
+
+	e.handleCommand(platform, msg, "/stop")
+
+	e.interactiveMu.Lock()
+	_, sideStateExists := e.interactiveStates[sideKey]
+	e.interactiveMu.Unlock()
+	if sideStateExists {
+		t.Fatal("/stop did not remove the busy side interactive state")
+	}
+	if sent := strings.Join(platform.getSent(), "\n"); !strings.Contains(sent, e.i18n.T(MsgExecutionStopped)) {
+		t.Fatalf("stop reply = %q, want %q", sent, e.i18n.T(MsgExecutionStopped))
+	}
+}
+
 func assertUserWorkspacePromptUsesRawSessionKey(
 	t *testing.T,
 	execute func(*Engine, Platform, *Message),

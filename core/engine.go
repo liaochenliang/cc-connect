@@ -425,6 +425,9 @@ type Engine struct {
 	// Multi-workspace mode
 	multiWorkspace               bool
 	userWorkspace                bool
+	userWorkspaceMu              sync.RWMutex
+	userSharedWorkspaces         map[string]string // lower-case command name -> validated path
+	userWorkspaceSelections      map[string]string // WeCom UserID -> shared workspace name; missing means /user
 	baseDir                      string
 	skipGit                      bool
 	workspaceInitAllowLocalPaths bool

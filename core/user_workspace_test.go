@@ -143,6 +143,131 @@ func newUserWorkspaceMemoryEngine(t *testing.T) (*Engine, *userWorkspaceTestPlat
 	return e, platform, msg, globalProject, globalGlobal, filepath.Join(workspace, "AGENTS.md"), workspaceGlobal
 }
 
+func configureUserSharedWorkspace(t *testing.T, e *Engine, name string) string {
+	t.Helper()
+	path := filepath.Join(e.baseDir, name)
+	if err := os.Mkdir(path, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := e.SetUserSharedWorkspaces([]string{name}); err != nil {
+		t.Fatal(err)
+	}
+	return normalizeWorkspacePath(path)
+}
+
+func TestSetUserSharedWorkspacesValidatesDirectoriesAndCommands(t *testing.T) {
+	baseDir := t.TempDir()
+	e := NewEngine("test", nil, nil, "", LangChinese)
+	e.SetUserWorkspace(baseDir, filepath.Join(t.TempDir(), "bindings.json"))
+
+	if err := e.SetUserSharedWorkspaces([]string{"missing"}); err == nil {
+		t.Fatal("missing shared workspace unexpectedly accepted")
+	}
+	if err := os.Mkdir(filepath.Join(baseDir, "new"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := e.SetUserSharedWorkspaces([]string{"new"}); err == nil {
+		t.Fatal("built-in command collision unexpectedly accepted")
+	}
+	if err := os.WriteFile(filepath.Join(baseDir, "filelab"), []byte("x"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := e.SetUserSharedWorkspaces([]string{"filelab"}); err == nil {
+		t.Fatal("ordinary file unexpectedly accepted")
+	}
+	target := t.TempDir()
+	if err := os.Symlink(target, filepath.Join(baseDir, "linklab")); err != nil {
+		t.Fatal(err)
+	}
+	if err := e.SetUserSharedWorkspaces([]string{"linklab"}); err == nil {
+		t.Fatal("symlink unexpectedly accepted")
+	}
+}
+
+func TestUserSharedWorkspaceSelectionUsesUserIDAcrossChats(t *testing.T) {
+	baseDir := t.TempDir()
+	e := NewEngine("test", nil, nil, "", LangChinese)
+	e.SetUserWorkspace(baseDir, filepath.Join(t.TempDir(), "bindings.json"))
+	shared := configureUserSharedWorkspace(t, e, "medialab")
+	e.setUserWorkspaceSelection("alice", "medialab")
+
+	for _, sessionKey := range []string{"wecom:group-1:alice", "wecom:private-2:alice"} {
+		msg := &Message{Platform: "wecom", SessionKey: sessionKey, UserID: "alice"}
+		got, err := e.prepareUserWorkspace(msg)
+		if err != nil || got != shared {
+			t.Fatalf("prepareUserWorkspace(%q) = %q, %v; want %q", sessionKey, got, err, shared)
+		}
+	}
+
+	bob := &Message{Platform: "wecom", SessionKey: "wecom:group-1:bob", UserID: "bob"}
+	bobWorkspace, err := e.prepareUserWorkspace(bob)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if bobWorkspace == shared {
+		t.Fatal("bob unexpectedly inherited alice's shared workspace")
+	}
+}
+
+func TestUserSharedWorkspaceSelectionClearsWhenDirectoryDisappears(t *testing.T) {
+	baseDir := t.TempDir()
+	e := NewEngine("test", nil, nil, "", LangChinese)
+	e.SetUserWorkspace(baseDir, filepath.Join(t.TempDir(), "bindings.json"))
+	shared := configureUserSharedWorkspace(t, e, "medialab")
+	e.setUserWorkspaceSelection("alice", "medialab")
+	if err := os.Remove(shared); err != nil {
+		t.Fatal(err)
+	}
+	msg := &Message{Platform: "wecom", SessionKey: "wecom:group-1:alice", UserID: "alice"}
+	_, err := e.prepareUserWorkspace(msg)
+	var unavailable *userSharedWorkspaceUnavailableError
+	if !errors.As(err, &unavailable) || unavailable.Name != "medialab" {
+		t.Fatalf("prepare error = %v, want medialab unavailable error", err)
+	}
+	if got := e.selectedUserSharedWorkspace("alice"); got != "" {
+		t.Fatalf("selection = %q, want cleared", got)
+	}
+}
+
+func TestUserSharedWorkspaceSelectionDoesNotRestoreFromBinding(t *testing.T) {
+	baseDir := t.TempDir()
+	storePath := filepath.Join(t.TempDir(), "bindings.json")
+	shared := filepath.Join(baseDir, "medialab")
+	if err := os.Mkdir(shared, 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	first := NewEngine("test", nil, nil, "", LangChinese)
+	t.Cleanup(first.cancel)
+	first.SetUserWorkspace(baseDir, storePath)
+	if err := first.SetUserSharedWorkspaces([]string{"medialab"}); err != nil {
+		t.Fatal(err)
+	}
+	first.setUserWorkspaceSelection("alice", "medialab")
+	msg := &Message{Platform: "wecom", SessionKey: "wecom:group-1:alice", UserID: "alice"}
+	if got, err := first.prepareUserWorkspace(msg); err != nil || got != normalizeWorkspacePath(shared) {
+		t.Fatalf("first workspace = %q, %v", got, err)
+	}
+
+	restarted := NewEngine("test", nil, nil, "", LangChinese)
+	t.Cleanup(restarted.cancel)
+	restarted.SetUserWorkspace(baseDir, storePath)
+	if err := restarted.SetUserSharedWorkspaces([]string{"medialab"}); err != nil {
+		t.Fatal(err)
+	}
+	got, err := restarted.prepareUserWorkspace(msg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want, err := ensureUserWorkspaceDir(baseDir, "alice")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got != want {
+		t.Fatalf("workspace after restart = %q, want /user workspace %q", got, want)
+	}
+}
+
 func TestEnsureUserWorkspaceDir(t *testing.T) {
 	baseDir := t.TempDir()
 	got, err := ensureUserWorkspaceDir(baseDir, "alice")

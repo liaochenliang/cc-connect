@@ -51,13 +51,94 @@ func ensureUserWorkspaceDir(baseDir, userID string) (string, error) {
 func (e *Engine) SetUserWorkspace(baseDir, bindingStorePath string) {
 	e.SetMultiWorkspace(baseDir, bindingStorePath)
 	e.userWorkspace = true
+	e.userWorkspaceMu.Lock()
+	e.userSharedWorkspaces = make(map[string]string)
+	e.userWorkspaceSelections = make(map[string]string)
+	e.userWorkspaceMu.Unlock()
+}
+
+type userSharedWorkspaceUnavailableError struct {
+	Name string
+	Err  error
+}
+
+func (e *userSharedWorkspaceUnavailableError) Error() string {
+	return fmt.Sprintf("user-workspace: shared workspace %q unavailable: %v", e.Name, e.Err)
+}
+
+func (e *userSharedWorkspaceUnavailableError) Unwrap() error { return e.Err }
+
+func (e *Engine) SetUserSharedWorkspaces(names []string) error {
+	if !e.userWorkspace {
+		return fmt.Errorf("user-workspace: shared workspaces require user-workspace mode")
+	}
+	workspaces := make(map[string]string, len(names))
+	for _, name := range names {
+		name = strings.ToLower(name)
+		if name == "user" || matchPrefix(name, builtinCommands) != "" {
+			return fmt.Errorf("user-workspace: shared workspace name %q conflicts with a command", name)
+		}
+		path := filepath.Join(e.baseDir, name)
+		info, err := os.Lstat(path)
+		if err != nil {
+			return fmt.Errorf("user-workspace: inspect shared workspace %q: %w", name, err)
+		}
+		if !info.IsDir() || info.Mode()&os.ModeSymlink != 0 {
+			return fmt.Errorf("user-workspace: shared workspace %q must be a real directory", name)
+		}
+		workspaces[name] = normalizeWorkspacePath(path)
+	}
+	e.userWorkspaceMu.Lock()
+	e.userSharedWorkspaces = workspaces
+	e.userWorkspaceSelections = make(map[string]string)
+	e.userWorkspaceMu.Unlock()
+	return nil
+}
+
+func (e *Engine) selectedUserSharedWorkspace(userID string) string {
+	e.userWorkspaceMu.RLock()
+	defer e.userWorkspaceMu.RUnlock()
+	return e.userWorkspaceSelections[userID]
+}
+
+func (e *Engine) setUserWorkspaceSelection(userID, name string) {
+	e.userWorkspaceMu.Lock()
+	defer e.userWorkspaceMu.Unlock()
+	if name == "" {
+		delete(e.userWorkspaceSelections, userID)
+		return
+	}
+	e.userWorkspaceSelections[userID] = name
+}
+
+func (e *Engine) resolveSelectedUserWorkspace(userID string) (string, error) {
+	e.userWorkspaceMu.RLock()
+	name := e.userWorkspaceSelections[userID]
+	path := e.userSharedWorkspaces[name]
+	e.userWorkspaceMu.RUnlock()
+	if name == "" {
+		return ensureUserWorkspaceDir(e.baseDir, userID)
+	}
+	info, err := os.Lstat(path)
+	if err == nil && info.IsDir() && info.Mode()&os.ModeSymlink == 0 {
+		return path, nil
+	}
+	if err == nil {
+		err = fmt.Errorf("path is not a real directory")
+	}
+	e.userWorkspaceMu.Lock()
+	if e.userWorkspaceSelections[userID] == name {
+		delete(e.userWorkspaceSelections, userID)
+	}
+	e.userWorkspaceMu.Unlock()
+	return "", &userSharedWorkspaceUnavailableError{Name: name, Err: err}
 }
 
 func (e *Engine) prepareUserWorkspace(msg *Message) (string, error) {
 	if msg == nil || msg.Platform != "wecom" {
 		return "", fmt.Errorf("user-workspace: authenticated WeCom message required")
 	}
-	workspace, err := ensureUserWorkspaceDir(e.baseDir, msg.UserID)
+	workspace, err := e.resolveSelectedUserWorkspace(msg.UserID)
 	if err != nil {
 		return "", err
 	}
@@ -107,7 +188,7 @@ func (e *Engine) resolveWorkspaceForSessionKey(p Platform, sessionKey string) (s
 	if userID == "" {
 		return "", fmt.Errorf("user-workspace: invalid WeCom session key")
 	}
-	workspace, err := ensureUserWorkspaceDir(e.baseDir, userID)
+	workspace, err := e.resolveSelectedUserWorkspace(userID)
 	if err != nil {
 		return "", err
 	}

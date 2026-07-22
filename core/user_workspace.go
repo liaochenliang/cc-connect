@@ -156,8 +156,7 @@ func (e *Engine) userHasBusyWorkspaceSession(userID string) bool {
 		}
 		idToKey, activeIDs := sessions.SessionKeyMap()
 		for sessionID, sessionKey := range idToKey {
-			sessionKey = strings.TrimPrefix(sessionKey, workspace+":")
-			if !activeIDs[sessionID] || userIDFromWeComSessionKey(sessionKey) != userID {
+			if !activeIDs[sessionID] || userIDFromWorkspaceSessionKey(workspace, sessionKey) != userID {
 				continue
 			}
 			if session := sessions.FindByID(sessionID); session != nil && session.Busy() {
@@ -166,6 +165,15 @@ func (e *Engine) userHasBusyWorkspaceSession(userID string) bool {
 		}
 	}
 	return false
+}
+
+func userIDFromWorkspaceSessionKey(workspace, sessionKey string) string {
+	if candidate, ok := strings.CutPrefix(sessionKey, workspace+":"); ok {
+		if userID := userIDFromWeComSessionKey(candidate); userID != "" {
+			return userID
+		}
+	}
+	return userIDFromWeComSessionKey(sessionKey)
 }
 
 func (e *Engine) handleUserWorkspaceSelectionCommand(p Platform, msg *Message, cmd string, args []string) bool {

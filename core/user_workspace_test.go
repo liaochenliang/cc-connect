@@ -399,6 +399,41 @@ func TestUserWorkspaceSelectionRejectsBusySessionWhenWorkspacePathContainsWeComM
 	}
 }
 
+func TestUserWorkspaceSelectionWithWorkspaceNamedWeComParsesRawAndPrefixedKeys(t *testing.T) {
+	tests := []struct {
+		name        string
+		sessionKey  string
+		wantBlocked bool
+	}{
+		{name: "raw", sessionKey: "wecom:group-2:alice", wantBlocked: true},
+		{name: "prefixed", sessionKey: "wecom:wecom:group-2:alice", wantBlocked: true},
+		{name: "invalid", sessionKey: "invalid:key", wantBlocked: false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			e, platform, _, _ := newUserWorkspaceExecutionEngine(t)
+			e.i18n = NewI18n(LangChinese)
+			configureUserSharedWorkspace(t, e, "medialab")
+			_, sessions, err := e.getOrCreateWorkspaceAgent("wecom")
+			if err != nil {
+				t.Fatal(err)
+			}
+			busy := sessions.GetOrCreateActive(tt.sessionKey)
+			if !busy.TryLock() {
+				t.Fatal("failed to mark session busy")
+			}
+			defer busy.Unlock()
+
+			alice := &Message{Platform: "wecom", SessionKey: "wecom:group-1:alice", UserID: "alice", ReplyCtx: "ctx"}
+			e.handleCommand(platform, alice, "/medialab")
+			gotBlocked := e.selectedUserSharedWorkspace("alice") == ""
+			if gotBlocked != tt.wantBlocked {
+				t.Fatalf("blocked = %v, want %v; replies = %q", gotBlocked, tt.wantBlocked, platform.getSent())
+			}
+		})
+	}
+}
+
 func TestUserWorkspaceSwitchSerializesMessageSetupPerUser(t *testing.T) {
 	e, platform, workspace, _ := newUserWorkspaceExecutionEngine(t)
 	e.i18n = NewI18n(LangChinese)

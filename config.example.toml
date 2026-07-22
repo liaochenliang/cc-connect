@@ -704,6 +704,15 @@ level = "info" # debug, info, warn, error
 # [projects.platforms.options]
 # bot_token = "xoxb-..."
 # app_token = "xapp-..."
+#
+# mode = "user-workspace"
+# base_dir = "/data/workspaces"
+# shared_workspaces = ["medialab", "designlab"]
+#
+# Shared directories must already exist as real directories:
+#   /data/workspaces/medialab
+#   /data/workspaces/designlab
+# Users switch with /medialab and return with /user.
 
 # =============================================================================
 # Project 1 / 项目 1

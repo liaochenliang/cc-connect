@@ -475,6 +475,10 @@ func main() {
 			bindingStore := filepath.Join(cfg.DataDir, "workspace_bindings.json")
 			if proj.Mode == "user-workspace" {
 				engine.SetUserWorkspace(baseDir, bindingStore)
+				if err := engine.SetUserSharedWorkspaces(proj.SharedWorkspaces); err != nil {
+					slog.Error("invalid user shared workspace configuration", "project", proj.Name, "error", err)
+					os.Exit(1)
+				}
 			} else {
 				engine.SetMultiWorkspace(baseDir, bindingStore)
 			}

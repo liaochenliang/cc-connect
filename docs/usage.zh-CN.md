@@ -902,6 +902,10 @@ type = "claudecode"
 - 频道名 `#project-a` → 自动绑定 `base_dir/project-a/`
 - 每个频道有独立的会话和 Agent 状态
 
+### user-workspace 共享工作区
+
+在企业微信 WebSocket 的 `user-workspace` 项目中配置 `shared_workspaces = ["medialab"]`。目录 `base_dir/medialab` 必须预先存在。用户执行 `/medialab` 后，该 UserID 的所有群聊和私聊都切换到共享目录；执行 `/user` 切回用户目录。每个聊天在每个 workspace 内仍保留独立 Agent 会话。服务重启后默认回到 `/user`。
+
 ---
 
 ## Web 管理后台（Beta）

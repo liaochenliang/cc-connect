@@ -989,6 +989,10 @@ type = "claudecode"
 - Channel name `#project-a` → auto-binds to `base_dir/project-a/`
 - Each channel has isolated sessions and agent state
 
+### Shared workspaces in user-workspace mode
+
+Set `shared_workspaces = ["medialab"]` on a WeCom WebSocket `user-workspace` project. The directory `base_dir/medialab` must already exist. `/medialab` switches every chat for the sending UserID to that shared directory; `/user` switches the user back. Each chat keeps a separate agent session inside each workspace. Selections reset to `/user` after restart.
+
 ---
 
 ## Web Admin Dashboard (Beta)

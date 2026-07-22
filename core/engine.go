@@ -428,6 +428,7 @@ type Engine struct {
 	userWorkspaceMu              sync.RWMutex
 	userSharedWorkspaces         map[string]string // lower-case command name -> validated path
 	userWorkspaceSelections      map[string]string // WeCom UserID -> shared workspace name; missing means /user
+	userWorkspaceSetupGates      map[string]*sync.Mutex
 	baseDir                      string
 	skipGit                      bool
 	workspaceInitAllowLocalPaths bool
@@ -2817,6 +2818,11 @@ func (e *Engine) handleMessage(p Platform, msg *Message) {
 	if msg.Recalled {
 		e.handleMessageRecall(p, msg)
 		return
+	}
+	if e.userWorkspace {
+		gate := e.userWorkspaceSetupGate(msg.UserID)
+		gate.Lock()
+		defer gate.Unlock()
 	}
 
 	slog.Info("message received",

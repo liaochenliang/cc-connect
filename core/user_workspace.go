@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 )
 
 func encodeUserWorkspaceID(userID string) (string, error) {
@@ -62,7 +63,19 @@ func (e *Engine) SetUserWorkspace(baseDir, bindingStorePath string) {
 	e.userWorkspaceMu.Lock()
 	e.userSharedWorkspaces = make(map[string]string)
 	e.userWorkspaceSelections = make(map[string]string)
+	e.userWorkspaceSetupGates = make(map[string]*sync.Mutex)
 	e.userWorkspaceMu.Unlock()
+}
+
+func (e *Engine) userWorkspaceSetupGate(userID string) *sync.Mutex {
+	e.userWorkspaceMu.Lock()
+	defer e.userWorkspaceMu.Unlock()
+	if gate := e.userWorkspaceSetupGates[userID]; gate != nil {
+		return gate
+	}
+	gate := &sync.Mutex{}
+	e.userWorkspaceSetupGates[userID] = gate
+	return gate
 }
 
 type userSharedWorkspaceUnavailableError struct {
@@ -268,6 +281,13 @@ func (e *Engine) switchUserWorkspace(msg *Message, name string) (string, error) 
 }
 
 func userIDFromWeComSessionKey(sessionKey string) string {
+	if !strings.HasPrefix(sessionKey, "wecom:") {
+		prefix, rest, ok := strings.Cut(sessionKey, ":wecom:")
+		if !ok || prefix == "" {
+			return ""
+		}
+		sessionKey = "wecom:" + rest
+	}
 	parts := strings.SplitN(sessionKey, ":", 3)
 	if len(parts) != 3 || parts[0] != "wecom" {
 		return ""

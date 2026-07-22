@@ -320,6 +320,127 @@ func TestUserWorkspaceSelectionRejectsBusySessionInAnotherChat(t *testing.T) {
 	}
 }
 
+func TestUserWorkspaceSelectionRejectsBusyPrefixedSessionInAnotherChat(t *testing.T) {
+	e, platform, workspace, _ := newUserWorkspaceExecutionEngine(t)
+	e.i18n = NewI18n(LangChinese)
+	configureUserSharedWorkspace(t, e, "medialab")
+	_, sessions, err := e.getOrCreateWorkspaceAgent(workspace)
+	if err != nil {
+		t.Fatal(err)
+	}
+	busy := sessions.GetOrCreateActive(workspace + ":wecom:group-2:alice")
+	if !busy.TryLock() {
+		t.Fatal("failed to mark prefixed session busy")
+	}
+	defer busy.Unlock()
+
+	bob := &Message{Platform: "wecom", SessionKey: "wecom:group-1:bob", UserID: "bob", ReplyCtx: "bob-ctx"}
+	e.handleCommand(platform, bob, "/medialab")
+	if got := e.selectedUserSharedWorkspace("bob"); got != "medialab" {
+		t.Fatalf("bob selection = %q, want medialab", got)
+	}
+
+	alice := &Message{Platform: "wecom", SessionKey: "wecom:group-1:alice", UserID: "alice", ReplyCtx: "alice-ctx"}
+	e.handleCommand(platform, alice, "/medialab")
+	if got := e.selectedUserSharedWorkspace("alice"); got != "" {
+		t.Fatalf("alice selection changed while prefixed session was busy: %q", got)
+	}
+	if sent := strings.Join(platform.getSent(), "\n"); !strings.Contains(sent, "请先执行 `/stop`") {
+		t.Fatalf("busy reply = %q", sent)
+	}
+}
+
+func TestUserIDFromWeComSessionKeySupportsWorkspacePrefix(t *testing.T) {
+	tests := map[string]string{
+		"wecom:group-1:alice":                 "alice",
+		"/workspace/user:wecom:group-1:alice": "alice",
+		"telegram:group-1:alice":              "",
+		"workspace:telegram:group-1:alice":    "",
+		"wecom:missing-user":                  "",
+	}
+	for sessionKey, want := range tests {
+		if got := userIDFromWeComSessionKey(sessionKey); got != want {
+			t.Errorf("userIDFromWeComSessionKey(%q) = %q, want %q", sessionKey, got, want)
+		}
+	}
+}
+
+func TestUserWorkspaceSwitchSerializesMessageSetupPerUser(t *testing.T) {
+	e, platform, workspace, _ := newUserWorkspaceExecutionEngine(t)
+	e.i18n = NewI18n(LangChinese)
+	configureUserSharedWorkspace(t, e, "medialab")
+
+	aliceGate := e.userWorkspaceSetupGate("alice")
+	aliceGate.Lock()
+	gateLocked := true
+	defer func() {
+		if gateLocked {
+			aliceGate.Unlock()
+		}
+	}()
+
+	aliceStarted := make(chan struct{})
+	aliceDone := make(chan struct{})
+	go func() {
+		close(aliceStarted)
+		e.handleMessage(platform, &Message{
+			Platform: "wecom", SessionKey: "wecom:group-1:alice", UserID: "alice",
+			Content: "/medialab", ReplyCtx: "alice-ctx",
+		})
+		close(aliceDone)
+	}()
+	<-aliceStarted
+
+	bobDone := make(chan struct{})
+	go func() {
+		e.handleMessage(platform, &Message{
+			Platform: "wecom", SessionKey: "wecom:group-1:bob", UserID: "bob",
+			Content: "/medialab", ReplyCtx: "bob-ctx",
+		})
+		close(bobDone)
+	}()
+	select {
+	case <-bobDone:
+	case <-time.After(time.Second):
+		t.Fatal("bob was blocked by alice's setup gate")
+	}
+	select {
+	case <-aliceDone:
+		t.Error("alice switch completed while her setup gate was held")
+	default:
+	}
+	if got := e.selectedUserSharedWorkspace("alice"); got != "" {
+		t.Errorf("alice selection changed while setup gate was held: %q", got)
+	}
+
+	_, sessions, err := e.getOrCreateWorkspaceAgent(workspace)
+	if err != nil {
+		t.Fatal(err)
+	}
+	busy := sessions.GetOrCreateActive("wecom:group-2:alice")
+	if !busy.TryLock() {
+		t.Fatal("failed to mark alice's old workspace session busy")
+	}
+	defer busy.Unlock()
+	aliceGate.Unlock()
+	gateLocked = false
+
+	select {
+	case <-aliceDone:
+	case <-time.After(time.Second):
+		t.Fatal("alice switch did not finish after setup gate was released")
+	}
+	if got := e.selectedUserSharedWorkspace("alice"); got != "" {
+		t.Fatalf("alice selection changed after busy session started: %q", got)
+	}
+	if got := e.selectedUserSharedWorkspace("bob"); got != "medialab" {
+		t.Fatalf("bob selection = %q, want medialab", got)
+	}
+	if sent := strings.Join(platform.getSent(), "\n"); !strings.Contains(sent, "请先执行 `/stop`") {
+		t.Fatalf("busy reply = %q", sent)
+	}
+}
+
 func TestUserSharedWorkspaceMissingConsumesCurrentMessage(t *testing.T) {
 	e, platform, _, starts := newUserWorkspaceExecutionEngine(t)
 	e.i18n = NewI18n(LangChinese)

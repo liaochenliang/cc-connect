@@ -184,12 +184,68 @@ func TestSetUserSharedWorkspacesValidatesDirectoriesAndCommands(t *testing.T) {
 	}
 }
 
+func TestSetUserSharedWorkspacesRejectsSymlinkBaseDir(t *testing.T) {
+	target := t.TempDir()
+	if err := os.Mkdir(filepath.Join(target, "medialab"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	baseDir := filepath.Join(t.TempDir(), "base")
+	if err := os.Symlink(target, baseDir); err != nil {
+		t.Fatal(err)
+	}
+	e := NewEngine("test", nil, nil, "", LangChinese)
+	e.SetUserWorkspace(baseDir, filepath.Join(t.TempDir(), "bindings.json"))
+	if err := e.SetUserSharedWorkspaces([]string{"medialab"}); err == nil {
+		t.Fatal("symlink base_dir unexpectedly accepted")
+	}
+}
+
+func TestUserSharedWorkspaceSelectionClearsWhenBaseDirBecomesSymlink(t *testing.T) {
+	baseDir := filepath.Join(t.TempDir(), "base")
+	if err := os.Mkdir(baseDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	e := NewEngine("test", nil, nil, "", LangChinese)
+	e.SetUserWorkspace(baseDir, filepath.Join(t.TempDir(), "bindings.json"))
+	configureUserSharedWorkspace(t, e, "medialab")
+	msg := &Message{Platform: "wecom", SessionKey: "wecom:group-1:alice", UserID: "alice"}
+	if _, err := e.switchUserWorkspace(msg, "medialab"); err != nil {
+		t.Fatal(err)
+	}
+
+	external := t.TempDir()
+	if err := os.Mkdir(filepath.Join(external, "medialab"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.RemoveAll(baseDir); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(external, baseDir); err != nil {
+		t.Fatal(err)
+	}
+
+	workspace, err := e.prepareUserWorkspace(msg)
+	var unavailable *userSharedWorkspaceUnavailableError
+	if !errors.As(err, &unavailable) || unavailable.Name != "medialab" {
+		t.Fatalf("prepare workspace = %q, error = %v; want unavailable error", workspace, err)
+	}
+	if workspace != "" {
+		t.Fatalf("workspace = %q, want no external path", workspace)
+	}
+	if got := e.selectedUserSharedWorkspace("alice"); got != "" {
+		t.Fatalf("selection = %q, want cleared", got)
+	}
+}
+
 func TestUserSharedWorkspaceSelectionUsesUserIDAcrossChats(t *testing.T) {
 	baseDir := t.TempDir()
 	e := NewEngine("test", nil, nil, "", LangChinese)
 	e.SetUserWorkspace(baseDir, filepath.Join(t.TempDir(), "bindings.json"))
 	shared := configureUserSharedWorkspace(t, e, "medialab")
-	e.setUserWorkspaceSelection("alice", "medialab")
+	initial := &Message{Platform: "wecom", SessionKey: "wecom:group-1:alice", UserID: "alice"}
+	if _, err := e.switchUserWorkspace(initial, "medialab"); err != nil {
+		t.Fatal(err)
+	}
 
 	for _, sessionKey := range []string{"wecom:group-1:alice", "wecom:private-2:alice"} {
 		msg := &Message{Platform: "wecom", SessionKey: sessionKey, UserID: "alice"}
@@ -209,16 +265,61 @@ func TestUserSharedWorkspaceSelectionUsesUserIDAcrossChats(t *testing.T) {
 	}
 }
 
+func TestSwitchUserWorkspaceKeepsSelectionAndBindingConsistent(t *testing.T) {
+	baseDir := t.TempDir()
+	e := NewEngine("test", nil, nil, "", LangChinese)
+	e.SetUserWorkspace(baseDir, "")
+	shared := configureUserSharedWorkspace(t, e, "medialab")
+	group := &Message{Platform: "wecom", SessionKey: "wecom:group-1:alice", UserID: "alice"}
+	private := &Message{Platform: "wecom", SessionKey: "wecom:private-2:alice", UserID: "alice"}
+
+	for range 200 {
+		start := make(chan struct{})
+		errs := make(chan error, 2)
+		go func() {
+			<-start
+			_, err := e.switchUserWorkspace(group, "medialab")
+			errs <- err
+		}()
+		go func() {
+			<-start
+			_, err := e.switchUserWorkspace(private, "")
+			errs <- err
+		}()
+		close(start)
+		for range 2 {
+			if err := <-errs; err != nil {
+				t.Fatal(err)
+			}
+		}
+
+		want := shared
+		if e.selectedUserSharedWorkspace("alice") == "" {
+			var err error
+			want, err = ensureUserWorkspaceDir(baseDir, "alice")
+			if err != nil {
+				t.Fatal(err)
+			}
+		}
+		binding := e.workspaceBindings.ListByProject("project:test")[workspaceChannelKey("wecom", "alice")]
+		if binding == nil || normalizeWorkspacePath(binding.Workspace) != want {
+			t.Fatalf("selection = %q, binding = %#v; want workspace %q", e.selectedUserSharedWorkspace("alice"), binding, want)
+		}
+	}
+}
+
 func TestUserSharedWorkspaceSelectionClearsWhenDirectoryDisappears(t *testing.T) {
 	baseDir := t.TempDir()
 	e := NewEngine("test", nil, nil, "", LangChinese)
 	e.SetUserWorkspace(baseDir, filepath.Join(t.TempDir(), "bindings.json"))
 	shared := configureUserSharedWorkspace(t, e, "medialab")
-	e.setUserWorkspaceSelection("alice", "medialab")
+	msg := &Message{Platform: "wecom", SessionKey: "wecom:group-1:alice", UserID: "alice"}
+	if _, err := e.switchUserWorkspace(msg, "medialab"); err != nil {
+		t.Fatal(err)
+	}
 	if err := os.Remove(shared); err != nil {
 		t.Fatal(err)
 	}
-	msg := &Message{Platform: "wecom", SessionKey: "wecom:group-1:alice", UserID: "alice"}
 	_, err := e.prepareUserWorkspace(msg)
 	var unavailable *userSharedWorkspaceUnavailableError
 	if !errors.As(err, &unavailable) || unavailable.Name != "medialab" {
@@ -226,6 +327,14 @@ func TestUserSharedWorkspaceSelectionClearsWhenDirectoryDisappears(t *testing.T)
 	}
 	if got := e.selectedUserSharedWorkspace("alice"); got != "" {
 		t.Fatalf("selection = %q, want cleared", got)
+	}
+	want, err := ensureUserWorkspaceDir(baseDir, "alice")
+	if err != nil {
+		t.Fatal(err)
+	}
+	binding := e.workspaceBindings.ListByProject("project:test")[workspaceChannelKey("wecom", "alice")]
+	if binding == nil || normalizeWorkspacePath(binding.Workspace) != want {
+		t.Fatalf("binding = %#v, want /user workspace %q", binding, want)
 	}
 }
 
@@ -243,9 +352,8 @@ func TestUserSharedWorkspaceSelectionDoesNotRestoreFromBinding(t *testing.T) {
 	if err := first.SetUserSharedWorkspaces([]string{"medialab"}); err != nil {
 		t.Fatal(err)
 	}
-	first.setUserWorkspaceSelection("alice", "medialab")
 	msg := &Message{Platform: "wecom", SessionKey: "wecom:group-1:alice", UserID: "alice"}
-	if got, err := first.prepareUserWorkspace(msg); err != nil || got != normalizeWorkspacePath(shared) {
+	if got, err := first.switchUserWorkspace(msg, "medialab"); err != nil || got != normalizeWorkspacePath(shared) {
 		t.Fatalf("first workspace = %q, %v", got, err)
 	}
 

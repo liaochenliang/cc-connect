@@ -147,7 +147,7 @@ func (e *Engine) userHasBusyWorkspaceSession(userID string) bool {
 		return false
 	}
 	// ponytail: workspace/session counts are small; add an index only if this scan is measured hot.
-	for _, state := range e.workspacePool.All() {
+	for workspace, state := range e.workspacePool.All() {
 		state.mu.Lock()
 		sessions := state.sessions
 		state.mu.Unlock()
@@ -156,6 +156,7 @@ func (e *Engine) userHasBusyWorkspaceSession(userID string) bool {
 		}
 		idToKey, activeIDs := sessions.SessionKeyMap()
 		for sessionID, sessionKey := range idToKey {
+			sessionKey = strings.TrimPrefix(sessionKey, workspace+":")
 			if !activeIDs[sessionID] || userIDFromWeComSessionKey(sessionKey) != userID {
 				continue
 			}
@@ -281,13 +282,6 @@ func (e *Engine) switchUserWorkspace(msg *Message, name string) (string, error) 
 }
 
 func userIDFromWeComSessionKey(sessionKey string) string {
-	if !strings.HasPrefix(sessionKey, "wecom:") {
-		prefix, rest, ok := strings.Cut(sessionKey, ":wecom:")
-		if !ok || prefix == "" {
-			return ""
-		}
-		sessionKey = "wecom:" + rest
-	}
 	parts := strings.SplitN(sessionKey, ":", 3)
 	if len(parts) != 3 || parts[0] != "wecom" {
 		return ""

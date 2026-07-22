@@ -2819,11 +2819,6 @@ func (e *Engine) handleMessage(p Platform, msg *Message) {
 		e.handleMessageRecall(p, msg)
 		return
 	}
-	if e.userWorkspace {
-		gate := e.userWorkspaceSetupGate(msg.UserID)
-		gate.Lock()
-		defer gate.Unlock()
-	}
 
 	slog.Info("message received",
 		"platform", msg.Platform, "msg_id", msg.MessageID,
@@ -2879,6 +2874,11 @@ func (e *Engine) handleMessage(p Platform, msg *Message) {
 			}
 		}
 		// Continue processing with the platform-provided text content
+	}
+	if e.userWorkspace {
+		gate := e.userWorkspaceSetupGate(msg.UserID)
+		gate.Lock()
+		defer gate.Unlock()
 	}
 
 	content := strings.TrimSpace(msg.Content)

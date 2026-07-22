@@ -56,6 +56,12 @@ type userWorkspaceMemoryAgent struct {
 	name, projectFile, globalFile string
 }
 
+type userWorkspaceSTT struct{ text string }
+
+func (s userWorkspaceSTT) Transcribe(context.Context, []byte, string, string) (string, error) {
+	return s.text, nil
+}
+
 func (a *userWorkspaceMemoryAgent) Name() string              { return a.name }
 func (a *userWorkspaceMemoryAgent) ProjectMemoryFile() string { return a.projectFile }
 func (a *userWorkspaceMemoryAgent) GlobalMemoryFile() string  { return a.globalFile }
@@ -350,10 +356,10 @@ func TestUserWorkspaceSelectionRejectsBusyPrefixedSessionInAnotherChat(t *testin
 	}
 }
 
-func TestUserIDFromWeComSessionKeySupportsWorkspacePrefix(t *testing.T) {
+func TestUserIDFromWeComSessionKeyOnlyAcceptsRawKeys(t *testing.T) {
 	tests := map[string]string{
 		"wecom:group-1:alice":                 "alice",
-		"/workspace/user:wecom:group-1:alice": "alice",
+		"/workspace/user:wecom:group-1:alice": "",
 		"telegram:group-1:alice":              "",
 		"workspace:telegram:group-1:alice":    "",
 		"wecom:missing-user":                  "",
@@ -362,6 +368,34 @@ func TestUserIDFromWeComSessionKeySupportsWorkspacePrefix(t *testing.T) {
 		if got := userIDFromWeComSessionKey(sessionKey); got != want {
 			t.Errorf("userIDFromWeComSessionKey(%q) = %q, want %q", sessionKey, got, want)
 		}
+	}
+}
+
+func TestUserWorkspaceSelectionRejectsBusySessionWhenWorkspacePathContainsWeComMarker(t *testing.T) {
+	e, platform, _, _ := newUserWorkspaceExecutionEngine(t)
+	e.i18n = NewI18n(LangChinese)
+	configureUserSharedWorkspace(t, e, "medialab")
+	workspace := filepath.Join(t.TempDir(), "acme:wecom:prod", "workspace")
+	if err := os.MkdirAll(workspace, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	_, sessions, err := e.getOrCreateWorkspaceAgent(workspace)
+	if err != nil {
+		t.Fatal(err)
+	}
+	busy := sessions.GetOrCreateActive(workspace + ":wecom:group-2:alice")
+	if !busy.TryLock() {
+		t.Fatal("failed to mark session in marker path busy")
+	}
+	defer busy.Unlock()
+
+	alice := &Message{Platform: "wecom", SessionKey: "wecom:group-1:alice", UserID: "alice", ReplyCtx: "ctx"}
+	e.handleCommand(platform, alice, "/medialab")
+	if got := e.selectedUserSharedWorkspace("alice"); got != "" {
+		t.Fatalf("alice selection changed while marker-path session was busy: %q", got)
+	}
+	if sent := strings.Join(platform.getSent(), "\n"); !strings.Contains(sent, "请先执行 `/stop`") {
+		t.Fatalf("busy reply = %q", sent)
 	}
 }
 
@@ -438,6 +472,30 @@ func TestUserWorkspaceSwitchSerializesMessageSetupPerUser(t *testing.T) {
 	}
 	if sent := strings.Join(platform.getSent(), "\n"); !strings.Contains(sent, "请先执行 `/stop`") {
 		t.Fatalf("busy reply = %q", sent)
+	}
+}
+
+func TestUserWorkspaceVoiceTranscriptionDoesNotDeadlockSetupGate(t *testing.T) {
+	e, platform, _, _ := newUserWorkspaceExecutionEngine(t)
+	configureUserSharedWorkspace(t, e, "medialab")
+	e.SetSpeechConfig(SpeechCfg{Enabled: true, STT: userWorkspaceSTT{text: "/medialab"}})
+
+	done := make(chan struct{})
+	go func() {
+		e.handleMessage(platform, &Message{
+			Platform: "wecom", SessionKey: "wecom:group-1:alice", UserID: "alice",
+			Audio: &AudioAttachment{Format: "mp3", Data: []byte("audio")}, ReplyCtx: "ctx",
+		})
+		close(done)
+	}()
+
+	select {
+	case <-done:
+	case <-time.After(time.Second):
+		t.Fatal("voice handler deadlocked while reacquiring the user workspace setup gate")
+	}
+	if got := e.selectedUserSharedWorkspace("alice"); got != "medialab" {
+		t.Fatalf("transcribed command selected %q, want medialab", got)
 	}
 }
 

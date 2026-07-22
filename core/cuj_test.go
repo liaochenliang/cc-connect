@@ -1950,11 +1950,13 @@ func TestCUJ_H4_UserSharedWorkspaceSelection(t *testing.T) {
 		t.Fatal(err)
 	}
 
+	sendSeq := 0
 	send := func(chatID, userID, content string) {
 		t.Helper()
+		sendSeq++
 		engine.ReceiveMessage(platform, &Message{
 			Platform: "wecom", SessionKey: "wecom:" + chatID + ":" + userID,
-			MessageID: "msg-" + chatID + "-" + userID + "-" + content,
+			MessageID: fmt.Sprintf("msg-%d", sendSeq),
 			UserID:    userID, UserName: userID, Content: content, ReplyCtx: chatID,
 		})
 	}

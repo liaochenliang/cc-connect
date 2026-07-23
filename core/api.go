@@ -89,7 +89,7 @@ func NewAPIServer(dataDir string) (*APIServer, error) {
 		engines:            make(map[string]*Engine),
 		maxAttachmentBytes: DefaultMaxAttachmentSize,
 	}
-	s.mux.HandleFunc("/send", s.blockForUserWorkspaces(s.handleSend))
+	s.mux.HandleFunc("/send", s.handleSend)
 	s.mux.HandleFunc("/sessions", s.blockForUserWorkspaces(s.handleSessions))
 	s.mux.HandleFunc("/cron/add", s.blockForUserWorkspaces(s.handleCronAdd))
 	s.mux.HandleFunc("/cron/list", s.blockForUserWorkspaces(s.handleCronList))

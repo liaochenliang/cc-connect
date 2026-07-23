@@ -1592,7 +1592,7 @@ func TestUserWorkspacePlainProviderAddRemoveDoNotPersistGlobalConfig(t *testing.
 	}
 }
 
-func TestUserWorkspaceAPIServerRejectsEverySocketEndpoint(t *testing.T) {
+func TestUserWorkspaceAPIServerAllowsSend(t *testing.T) {
 	api, err := NewAPIServer(t.TempDir())
 	if err != nil {
 		t.Fatal(err)
@@ -1649,10 +1649,16 @@ func TestUserWorkspaceAPIServerRejectsEverySocketEndpoint(t *testing.T) {
 	api.SetTimerScheduler(timerScheduler)
 	api.RegisterEngine("test", engine)
 
+	sendReq := httptest.NewRequest(http.MethodPost, "/send", bytes.NewBufferString(`{"project":"test","session_key":"wecom:group-9:alice","message":"allowed"}`))
+	sendRec := httptest.NewRecorder()
+	api.mux.ServeHTTP(sendRec, sendReq)
+	if sendRec.Code != http.StatusOK {
+		t.Fatalf("send status = %d, want 200; body=%s", sendRec.Code, sendRec.Body.String())
+	}
+
 	tests := []struct {
 		name, method, path, body string
 	}{
-		{"send", http.MethodPost, "/send", `{"project":"test","session_key":"wecom:group-9:alice","message":"blocked"}`},
 		{"sessions", http.MethodGet, "/sessions", ""},
 		{"cron add", http.MethodPost, "/cron/add", `{"project":"test","session_key":"wecom:group-9:alice","cron_expr":"0 7 * * *","prompt":"blocked"}`},
 		{"cron list", http.MethodGet, "/cron/list?project=test", ""},
@@ -1680,8 +1686,8 @@ func TestUserWorkspaceAPIServerRejectsEverySocketEndpoint(t *testing.T) {
 		})
 	}
 
-	if sent := platform.getSent(); len(sent) != 0 {
-		t.Fatalf("socket API sent messages: %#v", sent)
+	if sent := platform.getSent(); len(sent) != 1 || sent[0] != "allowed" {
+		t.Fatalf("socket API sent messages: %#v, want [allowed]", sent)
 	}
 	if jobs := cronStore.List(); len(jobs) != len(cronJobs) || cronStore.Get("cron-del") == nil || cronStore.Get("cron-edit").Description != "before" {
 		t.Fatalf("cron store changed: %#v", jobs)

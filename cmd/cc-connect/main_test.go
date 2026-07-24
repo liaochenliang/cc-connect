@@ -333,6 +333,16 @@ func TestPrintUsage_ListsCronExecCommand(t *testing.T) {
 	}
 }
 
+func TestPrintUsage_ListsUserWorkspaceCommands(t *testing.T) {
+	out := captureStderr(t, printUsage)
+
+	for _, want := range []string{"/user", "/<shared-workspace>", "/medialab"} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("printUsage() output missing %s:\n%s", want, out)
+		}
+	}
+}
+
 func TestCanonicalCronSubcommand_ManualTriggerAliases(t *testing.T) {
 	for _, sub := range []string{"exec", "run", "trigger"} {
 		if got := canonicalCronSubcommand(sub); got != "exec" {

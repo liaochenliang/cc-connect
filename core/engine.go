@@ -9252,7 +9252,7 @@ func langDisplayName(lang Language) string {
 
 func (e *Engine) cmdHelp(p Platform, msg *Message) {
 	if !supportsCards(p) {
-		e.reply(p, msg.ReplyCtx, e.i18n.T(MsgHelp))
+		e.reply(p, msg.ReplyCtx, e.i18n.T(MsgHelp)+e.userWorkspaceHelpText())
 		return
 	}
 	e.replyWithCard(p, msg.ReplyCtx, e.renderHelpCard())
@@ -9281,8 +9281,9 @@ func (e *Engine) cmdStart(p Platform, msg *Message) {
 const defaultHelpGroup = "session"
 
 type helpCardItem struct {
-	command string
-	action  string
+	command     string
+	action      string
+	description string
 }
 
 type helpCardGroup struct {
@@ -9391,8 +9392,12 @@ func (e *Engine) renderHelpGroupCard(groupKey string) *Card {
 	tabLabel := func(key MsgKey) string {
 		return strings.Trim(sectionTitle(key), "* ")
 	}
-	commandText := func(command string) string {
-		return "**" + command + "**  " + e.i18n.T(MsgKey(strings.TrimPrefix(command, "/")))
+	commandText := func(item helpCardItem) string {
+		description := item.description
+		if description == "" {
+			description = e.i18n.T(MsgKey(strings.TrimPrefix(item.command, "/")))
+		}
+		return "**" + item.command + "**  " + description
 	}
 
 	groups := helpCardGroups()
@@ -9403,6 +9408,9 @@ func (e *Engine) renderHelpGroupCard(groupKey string) *Card {
 			current = group
 			break
 		}
+	}
+	if current.key == "system" {
+		current.items = append(current.items, e.userWorkspaceHelpItems()...)
 	}
 
 	cb := NewCard().Title(e.i18n.T(MsgHelpTitle), "blue")
@@ -9418,7 +9426,7 @@ func (e *Engine) renderHelpGroupCard(groupKey string) *Card {
 		cb.ButtonsEqual(row...)
 	}
 	for _, item := range current.items {
-		cb.ListItem(commandText(item.command), "▶", item.action)
+		cb.ListItem(commandText(item), "▶", item.action)
 	}
 	cb.Note(e.i18n.T(MsgHelpTip))
 	return cb.Build()

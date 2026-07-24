@@ -59,6 +59,9 @@ func TestI18n_AllKeysHaveEnglish(t *testing.T) {
 
 func TestI18n_UserWorkspaceSwitchMessagesHaveAllTranslations(t *testing.T) {
 	keys := []MsgKey{
+		MsgUserWsHelpSection,
+		MsgUserWsHelpUser,
+		MsgUserWsHelpShared,
 		MsgUserWsSwitchedShared,
 		MsgUserWsSwitchedUser,
 		MsgUserWsAlreadyShared,

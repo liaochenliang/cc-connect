@@ -1653,6 +1653,10 @@ Commands:
   check-update       Check if a newer version is available
   config-example     (deprecated: use 'config example' instead)
 
+Messaging workspace commands (user-workspace mode):
+  /user                    Switch to your user workspace
+  /<shared-workspace>      Switch to a configured shared workspace (for example: /medialab)
+
 Examples:
   cc-connect                          Start with default config
   cc-connect --config /path/to.toml   Start with a specific config file

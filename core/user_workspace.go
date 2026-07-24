@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"sync"
 )
@@ -126,6 +127,49 @@ func (e *Engine) selectedUserSharedWorkspace(userID string) string {
 	e.userWorkspaceMu.RLock()
 	defer e.userWorkspaceMu.RUnlock()
 	return e.userWorkspaceSelections[userID]
+}
+
+func (e *Engine) userWorkspaceHelpItems() []helpCardItem {
+	if !e.userWorkspace {
+		return nil
+	}
+	e.userWorkspaceMu.RLock()
+	names := make([]string, 0, len(e.userSharedWorkspaces))
+	for name := range e.userSharedWorkspaces {
+		names = append(names, name)
+	}
+	e.userWorkspaceMu.RUnlock()
+	if len(names) == 0 {
+		return nil
+	}
+	sort.Strings(names)
+
+	items := []helpCardItem{{
+		command:     "/user",
+		action:      "cmd:/user",
+		description: e.i18n.T(MsgUserWsHelpUser),
+	}}
+	for _, name := range names {
+		items = append(items, helpCardItem{
+			command:     "/" + name,
+			action:      "cmd:/" + name,
+			description: e.i18n.T(MsgUserWsHelpShared),
+		})
+	}
+	return items
+}
+
+func (e *Engine) userWorkspaceHelpText() string {
+	items := e.userWorkspaceHelpItems()
+	if len(items) == 0 {
+		return ""
+	}
+	var text strings.Builder
+	text.WriteString("\n\n" + e.i18n.T(MsgUserWsHelpSection))
+	for _, item := range items {
+		text.WriteString("\n\n" + item.command + "\n  " + item.description)
+	}
+	return text.String()
 }
 
 func (e *Engine) matchUserWorkspaceSelectionCommand(cmd string) (string, bool) {

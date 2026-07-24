@@ -161,6 +161,58 @@ func configureUserSharedWorkspace(t *testing.T, e *Engine, name string) string {
 	return normalizeWorkspacePath(path)
 }
 
+func TestUserWorkspaceHelpListsSelectionCommands(t *testing.T) {
+	baseDir := t.TempDir()
+	for _, name := range []string{"zlab", "medialab"} {
+		if err := os.Mkdir(filepath.Join(baseDir, name), 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	e := NewEngine("test", &stubAgent{}, nil, "", LangEnglish)
+	e.SetUserWorkspace(baseDir, filepath.Join(t.TempDir(), "bindings.json"))
+	t.Run("unchanged without shared workspaces", func(t *testing.T) {
+		platform := &stubPlatformEngine{n: "plain"}
+		e.cmdHelp(platform, &Message{ReplyCtx: "ctx"})
+		if len(platform.sent) != 1 || platform.sent[0] != e.i18n.T(MsgHelp) {
+			t.Fatalf("help changed without shared workspaces: %#v", platform.sent)
+		}
+		if text := e.renderHelpGroupCard("system").RenderText(); strings.Contains(text, "**/user**") {
+			t.Fatalf("system help lists /user without shared workspaces:\n%s", text)
+		}
+	})
+	if err := e.SetUserSharedWorkspaces([]string{"zlab", "medialab"}); err != nil {
+		t.Fatal(err)
+	}
+
+	assertCommands := func(t *testing.T, text string) {
+		t.Helper()
+		previous := -1
+		for _, command := range []string{"/user", "/medialab", "/zlab"} {
+			index := strings.Index(text, command)
+			if index < 0 {
+				t.Fatalf("help text missing %s:\n%s", command, text)
+			}
+			if index <= previous {
+				t.Fatalf("help commands are not ordered /user, /medialab, /zlab:\n%s", text)
+			}
+			previous = index
+		}
+	}
+
+	t.Run("plain text", func(t *testing.T) {
+		platform := &stubPlatformEngine{n: "plain"}
+		e.cmdHelp(platform, &Message{ReplyCtx: "ctx"})
+		if len(platform.sent) != 1 {
+			t.Fatalf("sent messages = %d, want 1", len(platform.sent))
+		}
+		assertCommands(t, platform.sent[0])
+	})
+
+	t.Run("system card", func(t *testing.T) {
+		assertCommands(t, e.renderHelpGroupCard("system").RenderText())
+	})
+}
+
 func TestSetUserSharedWorkspacesValidatesDirectoriesAndCommands(t *testing.T) {
 	baseDir := t.TempDir()
 	e := NewEngine("test", nil, nil, "", LangChinese)

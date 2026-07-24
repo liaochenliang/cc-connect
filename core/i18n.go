@@ -645,6 +645,9 @@ const (
 	MsgWsInitDirNotFound        MsgKey = "ws_init_dir_not_found"
 	MsgWsInitInvalidTarget      MsgKey = "ws_init_invalid_target"
 	MsgWsInitLocalPathsDisabled MsgKey = "ws_init_local_paths_disabled"
+	MsgUserWsHelpSection        MsgKey = "user_ws_help_section"
+	MsgUserWsHelpUser           MsgKey = "user_ws_help_user"
+	MsgUserWsHelpShared         MsgKey = "user_ws_help_shared"
 	MsgUserWsSwitchedShared     MsgKey = "user_ws_switched_shared"
 	MsgUserWsSwitchedUser       MsgKey = "user_ws_switched_user"
 	MsgUserWsAlreadyShared      MsgKey = "user_ws_already_shared"
@@ -4198,6 +4201,27 @@ var messages = map[MsgKey]map[Language]string{
 		LangTraditionalChinese: "`/workspace init` 未啟用本機目錄目標。請使用 git 倉庫地址，或在此專案配置 `workspace_init_allow_local_paths = true`。",
 		LangJapanese:           "`/workspace init` ではローカルディレクトリ対象が無効です。git URL を使うか、このプロジェクトで `workspace_init_allow_local_paths = true` を有効にしてください。",
 		LangSpanish:            "Los destinos de directorio local están deshabilitados para `/workspace init`. Use una URL de git o habilite `workspace_init_allow_local_paths = true` para este proyecto.",
+	},
+	MsgUserWsHelpSection: {
+		LangEnglish:            "Workspace switching",
+		LangChinese:            "工作区切换",
+		LangTraditionalChinese: "工作區切換",
+		LangJapanese:           "ワークスペース切り替え",
+		LangSpanish:            "Cambio de workspace",
+	},
+	MsgUserWsHelpUser: {
+		LangEnglish:            "Switch to your user workspace",
+		LangChinese:            "切换到用户工作区",
+		LangTraditionalChinese: "切換到使用者工作區",
+		LangJapanese:           "ユーザーワークスペースに切り替える",
+		LangSpanish:            "Cambiar a tu workspace de usuario",
+	},
+	MsgUserWsHelpShared: {
+		LangEnglish:            "Switch to this shared workspace",
+		LangChinese:            "切换到此共享工作区",
+		LangTraditionalChinese: "切換到此共享工作區",
+		LangJapanese:           "この共有ワークスペースに切り替える",
+		LangSpanish:            "Cambiar a este workspace compartido",
 	},
 	MsgUserWsSwitchedShared: {
 		LangEnglish:            "Switched to shared workspace: `%s`",

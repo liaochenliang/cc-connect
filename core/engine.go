@@ -9292,7 +9292,7 @@ type helpCardGroup struct {
 	items    []helpCardItem
 }
 
-func helpCardGroups() []helpCardGroup {
+func helpCardGroups(restartDescription string) []helpCardGroup {
 	return []helpCardGroup{
 		{
 			key:      "session",
@@ -9338,7 +9338,7 @@ func helpCardGroups() []helpCardGroup {
 			items: []helpCardItem{
 				{command: "/doctor", action: "nav:/doctor"},
 				{command: "/config", action: "nav:/config"},
-				{command: "/restart", action: "cmd:/restart"},
+				{command: "/restart", action: "cmd:/restart", description: restartDescription},
 			},
 		},
 	}
@@ -9384,7 +9384,7 @@ func (e *Engine) renderHelpGroupCard(groupKey string) *Card {
 		return "**" + item.command + "**  " + description
 	}
 
-	groups := helpCardGroups()
+	groups := helpCardGroups(e.i18n.T(MsgHelpRestart))
 	current := groups[0]
 	normalizedGroup := strings.ToLower(strings.TrimSpace(groupKey))
 	for _, group := range groups {

@@ -3732,6 +3732,9 @@ func TestCmdHelp_UsesLegacyTextOnPlatformWithoutCardSupport(t *testing.T) {
 			t.Fatalf("help text contains hidden command %q", command)
 		}
 	}
+	if strings.Contains(p.sent[0], "/provider") {
+		t.Fatalf("help text contains hidden /provider reference: %q", p.sent[0])
+	}
 	if strings.Contains(p.sent[0], "权限模式：default / edit / plan / yolo") {
 		t.Fatalf("help text contains permission mode note")
 	}
@@ -6412,6 +6415,9 @@ func TestHandleCardNav_HelpHidesConfiguredCommands(t *testing.T) {
 					t.Fatalf("%s help text contains hidden command %s: %q", tt.group, command, text)
 				}
 			}
+			if strings.Contains(text, "/provider") {
+				t.Fatalf("%s help text contains hidden /provider reference: %q", tt.group, text)
+			}
 			if tt.contains != "" && !strings.Contains(text, tt.contains) {
 				t.Fatalf("%s help text = %q, want %q", tt.group, text, tt.contains)
 			}
@@ -6421,23 +6427,28 @@ func TestHandleCardNav_HelpHidesConfiguredCommands(t *testing.T) {
 
 func TestHelpRestartDescriptionUsesConnect(t *testing.T) {
 	tests := []struct {
-		lang Language
-		want string
+		lang        Language
+		helpWant    string
+		builtinWant string
 	}{
-		{lang: LangEnglish, want: "Restart connect service"},
-		{lang: LangChinese, want: "重启 connect 服务"},
-		{lang: LangTraditionalChinese, want: "重啟 connect 服務"},
-		{lang: LangJapanese, want: "connect サービスを再起動"},
-		{lang: LangSpanish, want: "Reiniciar el servicio connect"},
+		{lang: LangEnglish, helpWant: "Restart connect service", builtinWant: "Restart cc-connect service"},
+		{lang: LangChinese, helpWant: "重启 connect 服务", builtinWant: "重启 cc-connect 服务"},
+		{lang: LangTraditionalChinese, helpWant: "重啟 connect 服務", builtinWant: "重啟 cc-connect 服務"},
+		{lang: LangJapanese, helpWant: "connect サービスを再起動", builtinWant: "cc-connect サービスを再起動"},
+		{lang: LangSpanish, helpWant: "Reiniciar el servicio connect", builtinWant: "Reiniciar el servicio cc-connect"},
 	}
 	for _, tt := range tests {
 		t.Run(string(tt.lang), func(t *testing.T) {
 			i18n := NewI18n(tt.lang)
-			if help := i18n.T(MsgHelp); !strings.Contains(help, "/restart\n  "+tt.want) {
-				t.Fatalf("help text = %q, want restart description %q", help, tt.want)
+			if help := i18n.T(MsgHelp); !strings.Contains(help, "/restart\n  "+tt.helpWant) {
+				t.Fatalf("help text = %q, want restart description %q", help, tt.helpWant)
 			}
-			if got := i18n.T(MsgBuiltinCmdRestart); got != tt.want {
-				t.Fatalf("restart description = %q, want %q", got, tt.want)
+			e := NewEngine("test", &stubAgent{}, nil, "", tt.lang)
+			if card := e.renderHelpGroupCard("system").RenderText(); !strings.Contains(card, "**/restart**  "+tt.helpWant) {
+				t.Fatalf("system help card = %q, want restart description %q", card, tt.helpWant)
+			}
+			if got := i18n.T(MsgBuiltinCmdRestart); got != tt.builtinWant {
+				t.Fatalf("builtin restart description = %q, want %q", got, tt.builtinWant)
 			}
 		})
 	}

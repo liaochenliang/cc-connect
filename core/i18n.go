@@ -212,6 +212,7 @@ const (
 	MsgHelpToolsSection          MsgKey = "help_tools_section"
 	MsgHelpSystemSection         MsgKey = "help_system_section"
 	MsgHelpTip                   MsgKey = "help_tip"
+	MsgHelpRestart               MsgKey = "help_restart"
 	MsgListTitle                 MsgKey = "list_title"
 	MsgListTitlePaged            MsgKey = "list_title_paged"
 	MsgListEmpty                 MsgKey = "list_empty"
@@ -1009,7 +1010,7 @@ var messages = map[MsgKey]map[Language]string{
 			"/restart\n  Restart connect service\n\n" +
 			"/whoami\n  Show your User ID (for allow_from / admin_from)\n\n" +
 			"/help\n  Show this help\n\n" +
-			"Tip: Commands support prefix matching, e.g. `/pro l` = `/provider list`, `/sw 2` = `/switch 2`.\n\n" +
+			"Tip: Commands support prefix matching, e.g. `/sw 2` = `/switch 2`.\n\n" +
 			"Custom commands: define via `/commands add` or `[[commands]]` in config.toml.\n\n" +
 			"Command aliases: use `/alias add <trigger> <command>` or `[[aliases]]` in config.toml.\n\n" +
 			"Agent skills: auto-discovered from .claude/skills/<name>/SKILL.md etc.",
@@ -1036,7 +1037,7 @@ var messages = map[MsgKey]map[Language]string{
 			"/restart\n  重启 connect 服务\n\n" +
 			"/whoami\n  查看你的 User ID（用于 allow_from / admin_from 配置）\n\n" +
 			"/help\n  显示此帮助\n\n" +
-			"提示：命令支持前缀匹配，如 `/pro l` = `/provider list`，`/sw 2` = `/switch 2`。\n\n" +
+			"提示：命令支持前缀匹配，如 `/sw 2` = `/switch 2`。\n\n" +
 			"自定义命令：通过 `/commands add` 添加，或在 config.toml 中配置 `[[commands]]`。\n\n" +
 			"命令别名：使用 `/alias add <触发词> <命令>` 或在 config.toml 中配置 `[[aliases]]`。\n\n" +
 			"Agent Skills：自动发现自 .claude/skills/<name>/SKILL.md 等目录。",
@@ -1063,7 +1064,7 @@ var messages = map[MsgKey]map[Language]string{
 			"/restart\n  重啟 connect 服務\n\n" +
 			"/whoami\n  查看你的 User ID（用於 allow_from / admin_from 設定）\n\n" +
 			"/help\n  顯示此說明\n\n" +
-			"提示：命令支持前綴匹配，如 `/pro l` = `/provider list`，`/sw 2` = `/switch 2`。\n\n" +
+			"提示：命令支持前綴匹配，如 `/sw 2` = `/switch 2`。\n\n" +
 			"自訂命令：透過 `/commands add` 新增，或在 config.toml 中配置 `[[commands]]`。\n\n" +
 			"命令別名：使用 `/alias add <觸發詞> <命令>` 或在 config.toml 中配置 `[[aliases]]`。\n\n" +
 			"Agent Skills：自動發現自 .claude/skills/<name>/SKILL.md 等目錄。",
@@ -1089,7 +1090,7 @@ var messages = map[MsgKey]map[Language]string{
 			"/restart\n  connect サービスを再起動\n\n" +
 			"/whoami\n  あなたの User ID を表示（allow_from / admin_from 設定用）\n\n" +
 			"/help\n  このヘルプを表示\n\n" +
-			"ヒント：コマンドはプレフィックスマッチに対応しています。例: `/pro l` = `/provider list`、`/sw 2` = `/switch 2`。\n\n" +
+			"ヒント：コマンドはプレフィックスマッチに対応しています。例: `/sw 2` = `/switch 2`。\n\n" +
 			"カスタムコマンド: `/commands add` または config.toml の `[[commands]]` で定義。\n\n" +
 			"コマンドエイリアス: `/alias add <トリガー> <コマンド>` または config.toml の `[[aliases]]` で定義。\n\n" +
 			"エージェントスキル: .claude/skills/<name>/SKILL.md などから自動検出。",
@@ -1115,7 +1116,7 @@ var messages = map[MsgKey]map[Language]string{
 			"/restart\n  Reiniciar el servicio connect\n\n" +
 			"/whoami\n  Mostrar tu User ID (para allow_from / admin_from)\n\n" +
 			"/help\n  Mostrar esta ayuda\n\n" +
-			"Consejo: Los comandos admiten coincidencia por prefijo, ej. `/pro l` = `/provider list`, `/sw 2` = `/switch 2`.\n\n" +
+			"Consejo: Los comandos admiten coincidencia por prefijo, ej. `/sw 2` = `/switch 2`.\n\n" +
 			"Comandos personalizados: use `/commands add` o defina `[[commands]]` en config.toml.\n\n" +
 			"Alias de comandos: use `/alias add <trigger> <comando>` o `[[aliases]]` en config.toml.\n\n" +
 			"Skills del agente: descubiertos de .claude/skills/<name>/SKILL.md etc.",
@@ -1316,11 +1317,18 @@ var messages = map[MsgKey]map[Language]string{
 			"/version — Mostrar versión",
 	},
 	MsgHelpTip: {
-		LangEnglish:            "Tip: Commands support prefix matching, e.g. /pro l = /provider list",
-		LangChinese:            "提示：命令支持前缀匹配，如 /pro l = /provider list",
-		LangTraditionalChinese: "提示：命令支持前綴匹配，如 /pro l = /provider list",
-		LangJapanese:           "ヒント：コマンドはプレフィックスマッチに対応、例: /pro l = /provider list",
-		LangSpanish:            "Consejo: Los comandos admiten coincidencia por prefijo, ej. /pro l = /provider list",
+		LangEnglish:            "Tip: Commands support prefix matching, e.g. /sw 2 = /switch 2",
+		LangChinese:            "提示：命令支持前缀匹配，如 /sw 2 = /switch 2",
+		LangTraditionalChinese: "提示：命令支持前綴匹配，如 /sw 2 = /switch 2",
+		LangJapanese:           "ヒント：コマンドはプレフィックスマッチに対応、例: /sw 2 = /switch 2",
+		LangSpanish:            "Consejo: Los comandos admiten coincidencia por prefijo, ej. /sw 2 = /switch 2",
+	},
+	MsgHelpRestart: {
+		LangEnglish:            "Restart connect service",
+		LangChinese:            "重启 connect 服务",
+		LangTraditionalChinese: "重啟 connect 服務",
+		LangJapanese:           "connect サービスを再起動",
+		LangSpanish:            "Reiniciar el servicio connect",
 	},
 	MsgListTitle: {
 		LangEnglish:            "**%s Sessions** (%d)\n\n",
@@ -3643,11 +3651,11 @@ var messages = map[MsgKey]map[Language]string{
 		LangSpanish:            "Buscar actualizaciones y auto-actualizar",
 	},
 	MsgBuiltinCmdRestart: {
-		LangEnglish:            "Restart connect service",
-		LangChinese:            "重启 connect 服务",
-		LangTraditionalChinese: "重啟 connect 服務",
-		LangJapanese:           "connect サービスを再起動",
-		LangSpanish:            "Reiniciar el servicio connect",
+		LangEnglish:            "Restart cc-connect service",
+		LangChinese:            "重启 cc-connect 服务",
+		LangTraditionalChinese: "重啟 cc-connect 服務",
+		LangJapanese:           "cc-connect サービスを再起動",
+		LangSpanish:            "Reiniciar el servicio cc-connect",
 	},
 	MsgBuiltinCmdStatus: {
 		LangEnglish:            "Show system status",

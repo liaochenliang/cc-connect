@@ -173,7 +173,7 @@ func TestUserWorkspaceHelpListsSelectionCommands(t *testing.T) {
 	t.Run("unchanged without shared workspaces", func(t *testing.T) {
 		platform := &stubPlatformEngine{n: "plain"}
 		e.cmdHelp(platform, &Message{ReplyCtx: "ctx"})
-		if len(platform.sent) != 1 || platform.sent[0] != e.i18n.T(MsgHelp) {
+		if len(platform.sent) != 1 || platform.sent[0] != e.i18n.T(MsgHelp)+"\n\n"+e.i18n.T(MsgHelpFooter) {
 			t.Fatalf("help changed without shared workspaces: %#v", platform.sent)
 		}
 		if text := e.renderHelpGroupCard("system").RenderText(); strings.Contains(text, "**/user**") {

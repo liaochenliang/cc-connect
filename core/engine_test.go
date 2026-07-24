@@ -3701,7 +3701,7 @@ func TestCmdHelp_UsesLegacyTextOnPlatformWithoutCardSupport(t *testing.T) {
 	if len(p.sent) != 1 {
 		t.Fatalf("sent messages = %d, want 1", len(p.sent))
 	}
-	if got := p.sent[0]; got != e.i18n.T(MsgHelp) {
+	if got := p.sent[0]; got != e.i18n.T(MsgHelp)+"\n\n"+e.i18n.T(MsgHelpFooter) {
 		t.Fatalf("help text = %q, want legacy help text", got)
 	}
 	if strings.Contains(p.sent[0], "cc-connect 帮助") {

@@ -9252,7 +9252,7 @@ func langDisplayName(lang Language) string {
 
 func (e *Engine) cmdHelp(p Platform, msg *Message) {
 	if !supportsCards(p) {
-		e.reply(p, msg.ReplyCtx, e.i18n.T(MsgHelp)+e.userWorkspaceHelpText())
+		e.reply(p, msg.ReplyCtx, e.i18n.T(MsgHelp)+e.userWorkspaceHelpText()+"\n\n"+e.i18n.T(MsgHelpFooter))
 		return
 	}
 	e.replyWithCard(p, msg.ReplyCtx, e.renderHelpCard())

@@ -10,11 +10,11 @@ NVM 的 `default` 别名已指向 Node 24，但 `~/.zshrc` 后续将 `~/.hermes/
 
 ## 实现
 
-将 `~/.zshrc` 中最后覆盖 Node 选择的 Hermes PATH 设置替换为 `nvm use default --silent`。复用现有 NVM 默认版本，不硬编码 Node 安装目录，也不修改 Hermes 管理的文件或软链接。
+将 `~/.zshrc` 中最后覆盖 Node 选择的 Hermes PATH 设置替换为 `nvm use default --silent && path=("$NVM_BIN" ${path:#"$NVM_BIN"})`。复用现有 NVM 默认版本，并将 NVM 已选择的 bin 目录移到 zsh PATH 首位；不硬编码 Node 安装目录，也不修改 Hermes 管理的文件或软链接。
 
 ## 验证
 
-启动新的登录式交互 shell，确认：
+启动新的登录式和非登录式交互 shell，确认：
 
 - `node -v` 输出 `v24.15.0`。
 - `command -v node` 指向 `~/.nvm/versions/node/v24.15.0/bin/node`。

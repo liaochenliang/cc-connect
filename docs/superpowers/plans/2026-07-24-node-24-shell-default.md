@@ -4,7 +4,7 @@
 
 **Goal:** 让新启动的交互式 zsh 默认使用现有 NVM Node `v24.15.0`，同时保留 Hermes 自带的 Node `v22.22.3`。
 
-**Architecture:** 不修改 cc-connect 项目代码。复用现有 NVM `default -> v24.15.0`，在 `~/.zshrc` 最后一次 Node PATH 决策处执行 `nvm use default --silent`，避免硬编码 NVM 安装目录或改动 Hermes 管理文件。
+**Architecture:** 不修改 cc-connect 项目代码。复用现有 NVM `default -> v24.15.0`，在 `~/.zshrc` 最后一次 Node PATH 决策处选择默认版本，并将 `$NVM_BIN` 移到 zsh PATH 首位，避免硬编码 NVM 安装目录或改动 Hermes 管理文件。
 
 **Tech Stack:** zsh、NVM、Node.js 24
 
@@ -45,13 +45,14 @@ export PATH="/Users/liaochenliang/.hermes/node/bin:$PATH"
 替换为：
 
 ```zsh
-nvm use default --silent
+nvm use default --silent && path=("$NVM_BIN" ${path:#"$NVM_BIN"})
 ```
 
-- [ ] **Step 3: 验证新登录 shell 使用 Node 24**
+- [ ] **Step 3: 验证新的登录和非登录交互 shell 使用 Node 24**
 
 ```bash
-zsh -lic 'node -v; command -v node; npm -v; command -v npm'
+env -i HOME="$HOME" USER="$USER" LOGNAME="$LOGNAME" SHELL=/bin/zsh TERM=xterm-256color PATH=/usr/bin:/bin:/usr/sbin:/sbin /bin/zsh -lic 'node -v; command -v node; npm -v; command -v npm'
+env -i HOME="$HOME" USER="$USER" LOGNAME="$LOGNAME" SHELL=/bin/zsh TERM=xterm-256color PATH=/usr/bin:/bin:/usr/sbin:/sbin /bin/zsh -ic 'node -v; command -v node; npm -v; command -v npm'
 ```
 
 Expected:
@@ -71,10 +72,10 @@ v24.15.0
 
 Expected: 输出 `v22.22.3`。
 
-- [ ] **Step 5: 检查配置差异**
+- [ ] **Step 5: 检查目标配置行**
 
 ```bash
-git -C /Users/liaochenliang/Code/cc-connect status --short
+rg -n '^nvm use default --silent && path=' /Users/liaochenliang/.zshrc
 ```
 
-Expected: cc-connect 项目没有因 `~/.zshrc` 修改产生新的实现文件；`~/.zshrc` 位于仓库外，不创建实现提交。
+Expected: 只输出新的 Node 默认版本选择配置行；`~/.zshrc` 位于仓库外，不创建实现提交。

@@ -995,18 +995,8 @@ var messages = map[MsgKey]map[Language]string{
 			"/name [number] <text>\n  Name a session for easy identification\n\n" +
 			"/current\n  Show current active session\n\n" +
 			"/history [n]\n  Show last n messages (default 10)\n\n" +
-			"/provider [list|add|remove|switch|clear]\n  Manage API providers\n\n" +
 			"/memory [add|global|global add]\n  View/edit agent memory files\n\n" +
-			"/allow <tool>\n  Pre-allow a tool (next session)\n\n" +
-			"/model [switch <name>]\n  View/switch model\n\n" +
-			"/reasoning [level]\n  View/switch reasoning effort\n\n" +
-			"/mode [name]\n  View/switch permission mode\n\n" +
-			"/lang [en|zh|zh-TW|ja|es|auto]\n  View/switch language\n\n" +
 			"/compress\n  Compress conversation context\n\n" +
-			"/tts [always|voice_only]\n  View/switch text-to-speech mode\n\n" +
-			"/shell [--timeout <sec>] <command>\n  Run a shell command and return the output (! prefix shortcut: !cmd)\n\n" +
-			"/show <ref>\n  View a file, directory, or code snippet by reference\n\n" +
-			"/dir [path|reset]\n  Show, switch, or reset agent working directory\n\n" +
 			"/stop\n  Stop current execution\n\n" +
 			"/cron [add|list|exec|del|enable|disable]\n  Manage scheduled tasks\n\n" +
 			"/timer [add|list|del|mute|unmute]\n  Manage one-shot timers\n\n" +
@@ -1015,21 +1005,14 @@ var messages = map[MsgKey]map[Language]string{
 			"/alias [add|del]\n  Manage command aliases (e.g. 帮助 → /help)\n\n" +
 			"/skills\n  List agent skills (from SKILL.md)\n\n" +
 			"/config [get|set|reload] [key] [value]\n  View/update runtime configuration\n\n" +
-			"/bind [project|remove]\n  Manage relay binding in group chats\n\n" +
-			"/workspace [init]\n  Manage workspace\n\n" +
 			"/doctor\n  Run system diagnostics\n\n" +
-			"/usage\n  Show account/model quota usage\n\n" +
-			"/upgrade\n  Check for updates and self-update\n\n" +
-			"/restart\n  Restart cc-connect service\n\n" +
-			"/status\n  Show system status\n\n" +
-			"/version\n  Show cc-connect version\n\n" +
+			"/restart\n  Restart connect service\n\n" +
 			"/whoami\n  Show your User ID (for allow_from / admin_from)\n\n" +
 			"/help\n  Show this help\n\n" +
 			"Tip: Commands support prefix matching, e.g. `/pro l` = `/provider list`, `/sw 2` = `/switch 2`.\n\n" +
 			"Custom commands: define via `/commands add` or `[[commands]]` in config.toml.\n\n" +
 			"Command aliases: use `/alias add <trigger> <command>` or `[[aliases]]` in config.toml.\n\n" +
-			"Agent skills: auto-discovered from .claude/skills/<name>/SKILL.md etc.\n\n" +
-			"Permission modes: default / edit / plan / yolo",
+			"Agent skills: auto-discovered from .claude/skills/<name>/SKILL.md etc.",
 		LangChinese: "📖 可用命令\n\n" +
 			"/new [名称]\n  创建新会话\n\n" +
 			"/list\n  列出 Agent 会话列表\n\n" +
@@ -1039,18 +1022,8 @@ var messages = map[MsgKey]map[Language]string{
 			"/name [序号] <名称>\n  给会话命名，方便识别\n\n" +
 			"/current\n  查看当前活跃会话\n\n" +
 			"/history [n]\n  查看最近 n 条消息（默认 10）\n\n" +
-			"/provider [list|add|remove|switch|clear]\n  管理 API Provider\n\n" +
 			"/memory [add|global|global add]\n  查看/编辑 Agent 记忆文件\n\n" +
-			"/allow <工具名>\n  预授权工具（下次会话生效）\n\n" +
-			"/model [switch <名称>]\n  查看/切换模型\n\n" +
-			"/reasoning [级别]\n  查看/切换推理强度\n\n" +
-			"/mode [名称]\n  查看/切换权限模式\n\n" +
-			"/lang [en|zh|zh-TW|ja|es|auto]\n  查看/切换语言\n\n" +
 			"/compress\n  压缩会话上下文\n\n" +
-			"/tts [always|voice_only]\n  查看/切换语音合成模式\n\n" +
-			"/shell [--timeout <秒>] <命令>\n  执行 Shell 命令并返回结果（快捷方式：!命令）\n\n" +
-			"/show <引用>\n  按引用查看文件、目录或代码片段\n\n" +
-			"/dir [路径|reset]\n  查看、切换或重置 Agent 工作目录\n\n" +
 			"/stop\n  停止当前执行\n\n" +
 			"/cron [add|list|exec|del|enable|disable]\n  管理定时任务\n\n" +
 			"/timer [add|list|del|mute|unmute]\n  管理一次性定时器\n\n" +
@@ -1059,21 +1032,14 @@ var messages = map[MsgKey]map[Language]string{
 			"/alias [add|del]\n  管理命令别名（如 帮助 → /help）\n\n" +
 			"/skills\n  列出 Agent Skills（来自 SKILL.md）\n\n" +
 			"/config [get|set|reload] [key] [value]\n  查看/修改运行时配置\n\n" +
-			"/bind [项目名|remove]\n  管理群聊中继绑定\n\n" +
-			"/workspace [init]\n  管理工作区\n\n" +
 			"/doctor\n  运行系统诊断\n\n" +
-			"/usage\n  查看账号/模型限额使用情况\n\n" +
-			"/upgrade\n  检查更新并自动升级\n\n" +
-			"/restart\n  重启 cc-connect 服务\n\n" +
-			"/status\n  查看系统状态\n\n" +
-			"/version\n  查看 cc-connect 版本\n\n" +
+			"/restart\n  重启 connect 服务\n\n" +
 			"/whoami\n  查看你的 User ID（用于 allow_from / admin_from 配置）\n\n" +
 			"/help\n  显示此帮助\n\n" +
 			"提示：命令支持前缀匹配，如 `/pro l` = `/provider list`，`/sw 2` = `/switch 2`。\n\n" +
 			"自定义命令：通过 `/commands add` 添加，或在 config.toml 中配置 `[[commands]]`。\n\n" +
 			"命令别名：使用 `/alias add <触发词> <命令>` 或在 config.toml 中配置 `[[aliases]]`。\n\n" +
-			"Agent Skills：自动发现自 .claude/skills/<name>/SKILL.md 等目录。\n\n" +
-			"权限模式：default / edit / plan / yolo",
+			"Agent Skills：自动发现自 .claude/skills/<name>/SKILL.md 等目录。",
 		LangTraditionalChinese: "📖 可用命令\n\n" +
 			"/new [名稱]\n  建立新會話\n\n" +
 			"/list\n  列出 Agent 會話列表\n\n" +
@@ -1083,17 +1049,8 @@ var messages = map[MsgKey]map[Language]string{
 			"/name [序號] <名稱>\n  為會話命名，方便辨識\n\n" +
 			"/current\n  查看當前活躍會話\n\n" +
 			"/history [n]\n  查看最近 n 條訊息（預設 10）\n\n" +
-			"/provider [list|add|remove|switch|clear]\n  管理 API Provider\n\n" +
 			"/memory [add|global|global add]\n  查看/編輯 Agent 記憶檔案\n\n" +
-			"/allow <工具名>\n  預授權工具（下次會話生效）\n\n" +
-			"/model [switch <名稱>]\n  查看/切換模型\n\n" +
-			"/reasoning [級別]\n  查看/切換推理強度\n\n" +
-			"/mode [名稱]\n  查看/切換權限模式\n\n" +
-			"/lang [en|zh|zh-TW|ja|es|auto]\n  查看/切換語言\n\n" +
 			"/compress\n  壓縮會話上下文\n\n" +
-			"/tts [always|voice_only]\n  查看/切換語音合成模式\n\n" +
-			"/shell [--timeout <秒>] <命令>\n  執行 Shell 命令並返回結果（快捷方式：!命令）\n\n" +
-			"/dir [路徑|reset]\n  查看、切換或重置 Agent 工作目錄\n\n" +
 			"/stop\n  停止當前執行\n\n" +
 			"/cron [add|list|exec|del|enable|disable]\n  管理定時任務\n\n" +
 			"/timer [add|list|del|mute|unmute]\n  管理一次性定時器\n\n" +
@@ -1102,21 +1059,14 @@ var messages = map[MsgKey]map[Language]string{
 			"/alias [add|del]\n  管理命令別名（如 幫助 → /help）\n\n" +
 			"/skills\n  列出 Agent Skills（來自 SKILL.md）\n\n" +
 			"/config [get|set|reload] [key] [value]\n  查看/修改執行階段配置\n\n" +
-			"/bind [項目名|remove]\n  管理群聊中繼綁定\n\n" +
-			"/workspace [init]\n  管理工作區\n\n" +
 			"/doctor\n  執行系統診斷\n\n" +
-			"/usage\n  查看帳號/模型限額使用情況\n\n" +
-			"/upgrade\n  檢查更新並自動升級\n\n" +
-			"/restart\n  重啟 cc-connect 服務\n\n" +
-			"/status\n  查看系統狀態\n\n" +
-			"/version\n  查看 cc-connect 版本\n\n" +
+			"/restart\n  重啟 connect 服務\n\n" +
 			"/whoami\n  查看你的 User ID（用於 allow_from / admin_from 設定）\n\n" +
 			"/help\n  顯示此說明\n\n" +
 			"提示：命令支持前綴匹配，如 `/pro l` = `/provider list`，`/sw 2` = `/switch 2`。\n\n" +
 			"自訂命令：透過 `/commands add` 新增，或在 config.toml 中配置 `[[commands]]`。\n\n" +
 			"命令別名：使用 `/alias add <觸發詞> <命令>` 或在 config.toml 中配置 `[[aliases]]`。\n\n" +
-			"Agent Skills：自動發現自 .claude/skills/<name>/SKILL.md 等目錄。\n\n" +
-			"權限模式：default / edit / plan / yolo",
+			"Agent Skills：自動發現自 .claude/skills/<name>/SKILL.md 等目錄。",
 		LangJapanese: "📖 利用可能なコマンド\n\n" +
 			"/new [名前]\n  新しいセッションを開始\n\n" +
 			"/list\n  エージェントセッション一覧\n\n" +
@@ -1125,17 +1075,8 @@ var messages = map[MsgKey]map[Language]string{
 			"/name [番号] <名前>\n  セッションに名前を付ける\n\n" +
 			"/current\n  現在のアクティブセッションを表示\n\n" +
 			"/history [n]\n  直近 n 件のメッセージを表示（デフォルト 10）\n\n" +
-			"/provider [list|add|remove|switch|clear]\n  API プロバイダ管理\n\n" +
 			"/memory [add|global|global add]\n  エージェントメモリの表示/編集\n\n" +
-			"/allow <ツール名>\n  ツールを事前許可（次のセッションで有効）\n\n" +
-			"/model [switch <名前>]\n  モデルの表示/切り替え\n\n" +
-			"/reasoning [レベル]\n  推論レベルの表示/切り替え\n\n" +
-			"/mode [名前]\n  権限モードの表示/切り替え\n\n" +
-			"/lang [en|zh|zh-TW|ja|es|auto]\n  言語の表示/切り替え\n\n" +
 			"/compress\n  会話コンテキストを圧縮\n\n" +
-			"/tts [always|voice_only]\n  音声合成モードの表示/切り替え\n\n" +
-			"/shell [--timeout <秒>] <コマンド>\n  シェルコマンドを実行して結果を返す（ショートカット：!コマンド）\n\n" +
-			"/dir [パス|reset]\n  エージェントの作業ディレクトリを表示/切り替え/リセット\n\n" +
 			"/stop\n  現在の実行を停止\n\n" +
 			"/cron [add|list|exec|del|enable|disable]\n  スケジュールタスク管理\n\n" +
 			"/timer [add|list|del|mute|unmute]\n  ワンショットタイマー管理\n\n" +
@@ -1144,21 +1085,14 @@ var messages = map[MsgKey]map[Language]string{
 			"/alias [add|del]\n  コマンドエイリアス管理（例: ヘルプ → /help）\n\n" +
 			"/skills\n  エージェントスキル一覧（SKILL.md から）\n\n" +
 			"/config [get|set|reload] [key] [value]\n  ランタイム設定の表示/変更\n\n" +
-			"/bind [プロジェクト|remove]\n  グループチャットのリレー管理\n\n" +
-			"/workspace [init]\n  ワークスペース管理\n\n" +
 			"/doctor\n  システム診断を実行\n\n" +
-			"/usage\n  アカウント/モデル使用量を表示\n\n" +
-			"/upgrade\n  アップデートを確認して自動更新\n\n" +
-			"/restart\n  cc-connect サービスを再起動\n\n" +
-			"/status\n  システム状態を表示\n\n" +
-			"/version\n  cc-connect のバージョンを表示\n\n" +
+			"/restart\n  connect サービスを再起動\n\n" +
 			"/whoami\n  あなたの User ID を表示（allow_from / admin_from 設定用）\n\n" +
 			"/help\n  このヘルプを表示\n\n" +
 			"ヒント：コマンドはプレフィックスマッチに対応しています。例: `/pro l` = `/provider list`、`/sw 2` = `/switch 2`。\n\n" +
 			"カスタムコマンド: `/commands add` または config.toml の `[[commands]]` で定義。\n\n" +
 			"コマンドエイリアス: `/alias add <トリガー> <コマンド>` または config.toml の `[[aliases]]` で定義。\n\n" +
-			"エージェントスキル: .claude/skills/<name>/SKILL.md などから自動検出。\n\n" +
-			"権限モード: default / edit / plan / yolo",
+			"エージェントスキル: .claude/skills/<name>/SKILL.md などから自動検出。",
 		LangSpanish: "📖 Comandos disponibles\n\n" +
 			"/new [nombre]\n  Iniciar una nueva sesión\n\n" +
 			"/list\n  Listar sesiones del agente\n\n" +
@@ -1167,17 +1101,8 @@ var messages = map[MsgKey]map[Language]string{
 			"/name [número] <texto>\n  Nombrar una sesión para fácil identificación\n\n" +
 			"/current\n  Mostrar sesión activa actual\n\n" +
 			"/history [n]\n  Mostrar últimos n mensajes (por defecto 10)\n\n" +
-			"/provider [list|add|remove|switch|clear]\n  Gestionar proveedores API\n\n" +
 			"/memory [add|global|global add]\n  Ver/editar archivos de memoria del agente\n\n" +
-			"/allow <herramienta>\n  Pre-autorizar herramienta (próxima sesión)\n\n" +
-			"/model [switch <nombre>]\n  Ver/cambiar modelo\n\n" +
-			"/reasoning [nivel]\n  Ver/cambiar nivel de razonamiento\n\n" +
-			"/mode [nombre]\n  Ver/cambiar modo de permisos\n\n" +
-			"/lang [en|zh|zh-TW|ja|es|auto]\n  Ver/cambiar idioma\n\n" +
 			"/compress\n  Comprimir contexto de conversación\n\n" +
-			"/tts [always|voice_only]\n  Ver/cambiar modo de síntesis de voz\n\n" +
-			"/shell [--timeout <seg>] <comando>\n  Ejecutar un comando shell y devolver la salida (atajo: !comando)\n\n" +
-			"/dir [ruta|reset]\n  Ver, cambiar o restablecer el directorio de trabajo del agente\n\n" +
 			"/stop\n  Detener ejecución actual\n\n" +
 			"/cron [add|list|exec|del|enable|disable]\n  Gestionar tareas programadas\n\n" +
 			"/timer [add|list|del|mute|unmute]\n  Gestionar temporizadores de uso único\n\n" +
@@ -1186,21 +1111,14 @@ var messages = map[MsgKey]map[Language]string{
 			"/alias [add|del]\n  Gestionar alias de comandos (ej. ayuda → /help)\n\n" +
 			"/skills\n  Listar skills del agente (desde SKILL.md)\n\n" +
 			"/config [get|set|reload] [key] [value]\n  Ver/actualizar configuración en tiempo de ejecución\n\n" +
-			"/bind [proyecto|remove]\n  Gestionar retransmisión en chats de grupo\n\n" +
-			"/workspace [init]\n  Gestionar workspace\n\n" +
 			"/doctor\n  Ejecutar diagnósticos del sistema\n\n" +
-			"/usage\n  Mostrar uso de cuota de cuenta/modelo\n\n" +
-			"/upgrade\n  Buscar actualizaciones y auto-actualizar\n\n" +
-			"/restart\n  Reiniciar el servicio cc-connect\n\n" +
-			"/status\n  Mostrar estado del sistema\n\n" +
-			"/version\n  Mostrar versión de cc-connect\n\n" +
+			"/restart\n  Reiniciar el servicio connect\n\n" +
 			"/whoami\n  Mostrar tu User ID (para allow_from / admin_from)\n\n" +
 			"/help\n  Mostrar esta ayuda\n\n" +
 			"Consejo: Los comandos admiten coincidencia por prefijo, ej. `/pro l` = `/provider list`, `/sw 2` = `/switch 2`.\n\n" +
 			"Comandos personalizados: use `/commands add` o defina `[[commands]]` en config.toml.\n\n" +
 			"Alias de comandos: use `/alias add <trigger> <comando>` o `[[aliases]]` en config.toml.\n\n" +
-			"Skills del agente: descubiertos de .claude/skills/<name>/SKILL.md etc.\n\n" +
-			"Modos de permisos: default / edit / plan / yolo",
+			"Skills del agente: descubiertos de .claude/skills/<name>/SKILL.md etc.",
 	},
 	MsgHelpTitle: {
 		LangEnglish:            "cc-connect Help",
@@ -3725,11 +3643,11 @@ var messages = map[MsgKey]map[Language]string{
 		LangSpanish:            "Buscar actualizaciones y auto-actualizar",
 	},
 	MsgBuiltinCmdRestart: {
-		LangEnglish:            "Restart cc-connect service",
-		LangChinese:            "重启 cc-connect 服务",
-		LangTraditionalChinese: "重啟 cc-connect 服務",
-		LangJapanese:           "cc-connect サービスを再起動",
-		LangSpanish:            "Reiniciar el servicio cc-connect",
+		LangEnglish:            "Restart connect service",
+		LangChinese:            "重启 connect 服务",
+		LangTraditionalChinese: "重啟 connect 服務",
+		LangJapanese:           "connect サービスを再起動",
+		LangSpanish:            "Reiniciar el servicio connect",
 	},
 	MsgBuiltinCmdStatus: {
 		LangEnglish:            "Show system status",

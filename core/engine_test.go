@@ -3710,6 +3710,34 @@ func TestCmdHelp_UsesLegacyTextOnPlatformWithoutCardSupport(t *testing.T) {
 	if !strings.Contains(p.sent[0], "/cron [add|list|exec|del|enable|disable]") {
 		t.Fatalf("help text = %q, want explicit cron exec usage", p.sent[0])
 	}
+	for _, command := range []string{
+		"/usage",
+		"/upgrade",
+		"/status",
+		"/version",
+		"/provider [list|add|remove|switch|clear]",
+		"/model [switch <名称>]",
+		"/allow <工具名>",
+		"/reasoning [级别]",
+		"/mode [名称]",
+		"/lang [en|zh|zh-TW|ja|es|auto]",
+		"/tts [always|voice_only]",
+		"/shell [--timeout <秒>] <命令>",
+		"/show <引用>",
+		"/dir [路径|reset]",
+		"/bind [项目名|remove]",
+		"/workspace [init]",
+	} {
+		if strings.Contains(p.sent[0], "\n"+command+"\n") {
+			t.Fatalf("help text contains hidden command %q", command)
+		}
+	}
+	if strings.Contains(p.sent[0], "权限模式：default / edit / plan / yolo") {
+		t.Fatalf("help text contains permission mode note")
+	}
+	if !strings.Contains(p.sent[0], "/restart\n  重启 connect 服务") {
+		t.Fatalf("help text = %q, want connect restart description", p.sent[0])
+	}
 }
 
 func TestCmdList_UsesLegacyTextOnPlatformWithoutCardSupport(t *testing.T) {
@@ -6343,23 +6371,75 @@ func TestRenderHelpCard_DefaultsToSessionTab(t *testing.T) {
 	}
 }
 
-func TestHandleCardNav_HelpSwitchesTabs(t *testing.T) {
+func TestHandleCardNav_HelpHidesConfiguredCommands(t *testing.T) {
 	e := NewEngine("test", &stubAgent{}, []Platform{&stubPlatformEngine{n: "test"}}, "", LangEnglish)
 
-	card := e.handleCardNav("nav:/help agent", "test:user1")
-	if card == nil {
-		t.Fatal("expected help nav card")
+	tests := []struct {
+		group    string
+		kept     string
+		hidden   []string
+		contains string
+	}{
+		{
+			group:  "agent",
+			kept:   "/memory",
+			hidden: []string{"/model", "/reasoning", "/mode", "/lang", "/provider", "/allow", "/tts"},
+		},
+		{
+			group:  "tools",
+			kept:   "/cron",
+			hidden: []string{"/shell", "/show"},
+		},
+		{
+			group:    "system",
+			kept:     "/restart",
+			hidden:   []string{"/status", "/usage", "/bind", "/workspace", "/dir", "/version", "/upgrade"},
+			contains: "**/restart**  Restart connect service",
+		},
 	}
-	text := card.RenderText()
+	for _, tt := range tests {
+		t.Run(tt.group, func(t *testing.T) {
+			card := e.handleCardNav("nav:/help "+tt.group, "test:user1")
+			if card == nil {
+				t.Fatal("expected help nav card")
+			}
+			text := card.RenderText()
+			if !strings.Contains(text, "**"+tt.kept+"**") {
+				t.Fatalf("%s help text = %q, want %s", tt.group, text, tt.kept)
+			}
+			for _, command := range tt.hidden {
+				if strings.Contains(text, "**"+command+"**") {
+					t.Fatalf("%s help text contains hidden command %s: %q", tt.group, command, text)
+				}
+			}
+			if tt.contains != "" && !strings.Contains(text, tt.contains) {
+				t.Fatalf("%s help text = %q, want %q", tt.group, text, tt.contains)
+			}
+		})
+	}
+}
 
-	if !strings.Contains(text, "**/model**") {
-		t.Fatalf("agent help text = %q, want agent commands", text)
+func TestHelpRestartDescriptionUsesConnect(t *testing.T) {
+	tests := []struct {
+		lang Language
+		want string
+	}{
+		{lang: LangEnglish, want: "Restart connect service"},
+		{lang: LangChinese, want: "重启 connect 服务"},
+		{lang: LangTraditionalChinese, want: "重啟 connect 服務"},
+		{lang: LangJapanese, want: "connect サービスを再起動"},
+		{lang: LangSpanish, want: "Reiniciar el servicio connect"},
 	}
-	if strings.Contains(text, "**Agent Configuration**") {
-		t.Fatalf("agent help text = %q, should not repeat tab title in body", text)
-	}
-	if strings.Contains(text, "**/new**") {
-		t.Fatalf("agent help text = %q, should not include session commands", text)
+	for _, tt := range tests {
+		t.Run(string(tt.lang), func(t *testing.T) {
+			i18n := NewI18n(tt.lang)
+			if help := i18n.T(MsgHelp); !strings.Contains(help, "/restart\n  "+tt.want) {
+				t.Fatalf("help text = %q, want restart description %q", help, tt.want)
+			}
+			if got := i18n.T(MsgBuiltinCmdRestart); got != tt.want {
+				t.Fatalf("restart description = %q, want %q", got, tt.want)
+			}
+		})
 	}
 }
 

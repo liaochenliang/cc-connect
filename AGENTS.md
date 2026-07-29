@@ -276,3 +276,6 @@ Available tags: `no_acp`, `no_claudecode`, `no_codex`, `no_copilot`, `no_cursor`
 6. Optionally implement `AgentDoctorInfo` for `cc-connect doctor` support
 7. Add config example in `config.example.toml`
 8. Add unit tests
+
+## 项目部署
+部署在: /Users/liaochenliang/Code/k8s-agent/k8s-codex/cc-connect

@@ -13,10 +13,12 @@
 
 ## 实现
 
-复用 `processInteractiveEvents` 中现有即时回复发送位置和 `MsgStarting`，仅扩展 quiet 模式的触发条件。排队消息的即时回复分支保持不变，因此 quiet 模式不会在排队任务稍后启动时重复提示。不增加配置、依赖或新抽象。
+在 `handleMessage` 成功取得空闲会话锁后先检测当前消息语言，再复用 `e.send` 和 `MsgStarting` 发送提示。busy 分支会在此之前返回。消息和排队项携带“已发送即时回复”的内部快照，后续处理不再根据可能变化的全局 mode 重复发送；cron、timer 和非 quiet 的现有 `[instant_reply]` 行为保持不变。不增加配置、依赖或新抽象。
 
 ## 测试
 
 - quiet 空闲会话即使成功创建流式卡片，也发送“⏳ 处理中...”。
+- 自动语言模式下，首次中文消息发送中文提示。
+- 提示发送后切换 display mode，不会重复发送配置的即时回复。
 - quiet 忙碌会话收到下一条消息时只返回现有排队提示。
 - 现有非 quiet、Slash 命令和显式 `[instant_reply]` 测试继续通过。

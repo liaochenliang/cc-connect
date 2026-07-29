@@ -502,6 +502,7 @@ type queuedMessage struct {
 	msgSessionKey     string // session key for extracting chat ID
 	channelKey        string // platform-provided channel identifier (preferred over sessionKey extraction)
 	userMessageTimeMs int64  // Feishu create_time ms (optional); see Message.UserMessageTimeMs
+	instantReplySent  bool
 }
 
 // interactiveState tracks a running interactive agent session and its permission state.
@@ -551,6 +552,7 @@ type interactiveState struct {
 	// currentTurnUserMessageTimeMs is the UserMessageTimeMs for the in-flight
 	// foreground turn (including a queued turn after EventResult).
 	currentTurnUserMessageTimeMs int64
+	instantReplySent             bool
 }
 
 // latestUserMessageWatermarkLocked returns the highest UserMessageTimeMs among
@@ -3120,6 +3122,12 @@ sessionLocked:
 		"session", session.ID,
 	)
 
+	if e.display.Mode == "quiet" {
+		e.i18n.DetectAndSet(msg.Content)
+		e.send(p, msg.ReplyCtx, e.i18n.T(MsgStarting))
+		msg.instantReplySent = true
+	}
+
 	go e.processInteractiveMessageWith(p, msg, session, agent, sessions, interactiveKey, resolvedWorkspace, msg.SessionKey)
 }
 
@@ -3233,6 +3241,7 @@ func (e *Engine) queueMessageForBusySession(p Platform, msg *Message, interactiv
 		msgSessionKey:     msg.SessionKey,
 		channelKey:        msg.ChannelKey,
 		userMessageTimeMs: msg.UserMessageTimeMs,
+		instantReplySent:  e.display.Mode == "quiet",
 	})
 	queueDepth := len(state.pendingMessages)
 
@@ -3779,6 +3788,7 @@ func (e *Engine) processInteractiveMessageWith(p Platform, msg *Message, session
 	state.replyCtx = msg.ReplyCtx
 	state.currentMessageID = msg.MessageID
 	state.currentTurnUserMessageTimeMs = msg.UserMessageTimeMs
+	state.instantReplySent = msg.instantReplySent
 	state.mu.Unlock()
 	stopRecallMonitor := e.startMessageRecallMonitor(interactiveKey)
 	defer stopRecallMonitor()
@@ -4811,6 +4821,7 @@ func (e *Engine) processInteractiveEvents(state *interactiveState, session *Sess
 
 	state.mu.Lock()
 	workspaceDir := state.workspaceDir
+	instantReplySent := state.instantReplySent
 	replyAgent := state.agent
 	if replyAgent == nil {
 		replyAgent = e.agent
@@ -4843,10 +4854,7 @@ func (e *Engine) processInteractiveEvents(state *interactiveState, session *Sess
 	cp := newCompactProgressWriter(e.ctx, state.platform, state.replyCtx, e.agent.Name(), e.i18n.CurrentLang(), workspaceRenderer)
 	state.mu.Unlock()
 
-	// Send instant confirmation reply if enabled and no streaming card is active.
-	// Streaming cards provide their own "processing" indicator, so instant reply
-	// is only needed when the platform doesn't support cards or card creation failed.
-	if e.instantReply.Enabled && streamCard == nil {
+	if !instantReplySent && e.instantReply.Enabled && streamCard == nil {
 		replyContent := e.instantReply.Content
 		if replyContent == "" {
 			replyContent = e.i18n.T(MsgStarting)
@@ -5914,7 +5922,9 @@ func (e *Engine) processInteractiveEvents(state *interactiveState, session *Sess
 				state.currentMessageID = queued.messageID
 				state.fromVoice = queued.fromVoice
 				state.currentTurnUserMessageTimeMs = queued.userMessageTimeMs
+				state.instantReplySent = queued.instantReplySent
 				state.mu.Unlock()
+				instantReplySent = queued.instantReplySent
 
 				// Stop the previous turn's typing indicator
 				if stopTyping != nil {
@@ -6004,8 +6014,7 @@ func (e *Engine) processInteractiveEvents(state *interactiveState, session *Sess
 					}
 				}
 
-				// Send instant reply for queued turn if no streaming card is active.
-				if e.instantReply.Enabled && streamCard == nil {
+				if !instantReplySent && e.instantReply.Enabled && streamCard == nil {
 					replyContent := e.instantReply.Content
 					if replyContent == "" {
 						replyContent = e.i18n.T(MsgStarting)
@@ -6255,6 +6264,7 @@ func (e *Engine) drainPendingMessages(state *interactiveState, session *Session,
 		state.currentMessageID = queued.messageID
 		state.fromVoice = queued.fromVoice
 		state.currentTurnUserMessageTimeMs = queued.userMessageTimeMs
+		state.instantReplySent = queued.instantReplySent
 		state.mu.Unlock()
 
 		e.i18n.DetectAndSet(queued.content)

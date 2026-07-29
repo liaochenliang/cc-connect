@@ -13797,6 +13797,131 @@ func TestHandleMessage_InstantReply_SkippedForStreamingCardPlatform(t *testing.T
 	}
 }
 
+func TestHandleMessage_QuietSendsStartingForStreamingCardPlatform(t *testing.T) {
+	p := &stubStreamingCardPlatform{stubPlatformEngine: stubPlatformEngine{n: "dingtalk"}}
+	agentSession := newResultAgentSession("agent reply")
+	agent := &resultAgent{session: agentSession}
+	e := NewEngine("test", agent, []Platform{p}, "", LangAuto)
+	e.SetDisplayConfig(DisplayCfg{Mode: "quiet"})
+
+	e.handleMessage(p, &Message{
+		SessionKey: "dingtalk:user1",
+		Platform:   "dingtalk",
+		UserID:     "u1",
+		UserName:   "user",
+		Content:    "请处理这个任务",
+		ReplyCtx:   "ctx",
+	})
+
+	sent := waitForPlatformSend(&p.stubPlatformEngine, 1, time.Second)
+	want := messages[MsgStarting][LangChinese]
+	if len(sent) != 1 || sent[0] != want {
+		t.Fatalf("sent = %v, want only %q", sent, want)
+	}
+}
+
+func TestHandleMessage_QuietAcknowledgementSurvivesModeChange(t *testing.T) {
+	p := &stubPlatformEngine{n: "test"}
+	startEntered := make(chan struct{})
+	releaseStart := make(chan struct{})
+	agent := &controllableAgent{startSessionFn: func(context.Context, string) (AgentSession, error) {
+		close(startEntered)
+		<-releaseStart
+		return newResultAgentSession("agent reply"), nil
+	}}
+	e := NewEngine("test", agent, []Platform{p}, "", LangChinese)
+	e.SetDisplayConfig(DisplayCfg{Mode: "quiet"})
+	e.SetInstantReply(InstantReplyCfg{Enabled: true, Content: "custom starting"})
+
+	e.handleMessage(p, &Message{
+		SessionKey: "test:user1",
+		Platform:   "test",
+		UserID:     "u1",
+		UserName:   "user",
+		Content:    "hello",
+		ReplyCtx:   "ctx",
+	})
+
+	<-startEntered
+	e.SetDisplayConfig(DisplayCfg{Mode: "full"})
+	close(releaseStart)
+
+	sent := waitForPlatformSend(p, 2, 2*time.Second)
+	if len(sent) != 2 || sent[0] != e.i18n.T(MsgStarting) || sent[1] != "agent reply" {
+		t.Fatalf("sent = %v, want starting acknowledgement then agent reply", sent)
+	}
+}
+
+func TestHandleMessage_QuietBusySessionKeepsQueuedReply(t *testing.T) {
+	p := &stubPlatformEngine{n: "test"}
+	sess := newQueuingSession("running")
+	e := NewEngine("test", &controllableAgent{nextSession: sess}, []Platform{p}, "", LangChinese)
+	e.SetDisplayConfig(DisplayCfg{Mode: "quiet"})
+	e.SetInstantReply(InstantReplyCfg{Enabled: true, Content: "custom starting"})
+
+	key := "test:user1"
+	session := e.sessions.GetOrCreateActive(key)
+	if !session.TryLock() {
+		t.Fatal("expected session lock")
+	}
+	defer session.Unlock()
+
+	state := &interactiveState{
+		agentSession:     sess,
+		platform:         p,
+		replyCtx:         "ctx-running",
+		instantReplySent: true,
+	}
+	e.interactiveMu.Lock()
+	e.interactiveStates[key] = state
+	e.interactiveMu.Unlock()
+
+	e.handleMessage(p, &Message{
+		SessionKey: key,
+		Platform:   "test",
+		UserID:     "u1",
+		UserName:   "user",
+		Content:    "second task",
+		ReplyCtx:   "ctx-queued",
+	})
+
+	sent := p.getSent()
+	if len(sent) != 1 || sent[0] != e.i18n.T(MsgMessageQueued) {
+		t.Fatalf("sent = %v, want only %q", sent, e.i18n.T(MsgMessageQueued))
+	}
+
+	go func() {
+		sess.events <- Event{Type: EventResult, Content: "response1", Done: true}
+		for {
+			sess.sendMu.Lock()
+			sentQueued := len(sess.sendCalls) > 0
+			sess.sendMu.Unlock()
+			if sentQueued {
+				break
+			}
+			time.Sleep(5 * time.Millisecond)
+		}
+		sess.events <- Event{Type: EventResult, Content: "response2", Done: true}
+	}()
+
+	done := make(chan struct{})
+	go func() {
+		e.processInteractiveEvents(state, session, e.sessions, key, "msg-running", time.Now(), nil, nil, "ctx-running")
+		close(done)
+	}()
+
+	select {
+	case <-done:
+	case <-time.After(3 * time.Second):
+		t.Fatal("queued turn did not complete")
+	}
+
+	sent = p.getSent()
+	if len(sent) != 3 || sent[0] != e.i18n.T(MsgMessageQueued) || sent[1] != "response1" || sent[2] != "response2" {
+		t.Fatalf("sent = %v, want queue acknowledgement and two responses without another starting message", sent)
+	}
+}
+
 func TestHandleMessage_InstantReply_SentWhenStreamingCardFails(t *testing.T) {
 	p := &stubStreamingCardPlatform{
 		stubPlatformEngine: stubPlatformEngine{n: "dingtalk"},

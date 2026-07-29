@@ -242,6 +242,8 @@ type Message struct {
 	// drop late redeliveries that reuse a new message_id but an older create_time
 	// than a message already processed. Zero means unset (no ordering hint).
 	UserMessageTimeMs int64
+
+	instantReplySent bool // engine-local turn snapshot; never set by platforms
 }
 
 // EventType distinguishes different kinds of agent output.

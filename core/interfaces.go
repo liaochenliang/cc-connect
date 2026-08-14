@@ -705,6 +705,20 @@ type StreamingCardPlatform interface {
 	CreateStreamingCard(ctx context.Context, replyCtx any) (StreamingCard, error)
 }
 
+// StreamingTurn represents one full-replacement Markdown response that a
+// platform can update while an agent turn is running.
+type StreamingTurn interface {
+	Update(ctx context.Context, content string) error
+	Finalize(ctx context.Context, content string) error
+	Failed() bool
+}
+
+// StreamingTurnPlatform is an optional interface for platforms that can keep
+// an inbound-message reply updated for the duration of an agent turn.
+type StreamingTurnPlatform interface {
+	CreateStreamingTurn(ctx context.Context, replyCtx any) (StreamingTurn, error)
+}
+
 // CardStatus represents the visual status of a card header.
 type CardStatus string
 

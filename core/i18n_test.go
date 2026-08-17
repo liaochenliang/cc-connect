@@ -49,6 +49,28 @@ func TestI18n_Tf(t *testing.T) {
 	}
 }
 
+func TestI18n_UnknownCommandUsesInternalWording(t *testing.T) {
+	tests := []struct {
+		lang Language
+		want string
+	}{
+		{LangEnglish, "`/not-a-command` is not an internal command, forwarding to agent..."},
+		{LangChinese, "`/not-a-command` 不是内部命令，已转发给 Agent 处理..."},
+		{LangTraditionalChinese, "`/not-a-command` 不是內部命令，已轉發給 Agent 處理..."},
+		{LangJapanese, "`/not-a-command` は内部コマンドではありません。エージェントに転送します..."},
+		{LangSpanish, "`/not-a-command` no es un comando interno, reenviando al agente..."},
+	}
+
+	for _, tt := range tests {
+		t.Run(string(tt.lang), func(t *testing.T) {
+			got := NewI18n(tt.lang).Tf(MsgUnknownCommand, "/not-a-command")
+			if got != tt.want {
+				t.Fatalf("unknown command notice = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
 func TestI18n_AllKeysHaveEnglish(t *testing.T) {
 	for key, langs := range messages {
 		if _, ok := langs[LangEnglish]; !ok {
@@ -82,7 +104,7 @@ func TestI18n_UserWorkspaceSwitchMessagesHaveAllTranslations(t *testing.T) {
 
 func TestDetectLanguage(t *testing.T) {
 	tests := []struct {
-		text    string
+		text     string
 		wantLang Language
 	}{
 		// Japanese Hiragana

@@ -144,6 +144,34 @@ func TestStreamingTurnContentUsesThinkBlock(t *testing.T) {
 	}
 }
 
+func TestStreamingTurnThinkBlockUpdatesStayOnOneStream(t *testing.T) {
+	p, frames := newStreamingTurnCapture(t, 3)
+	turn, err := p.CreateStreamingTurn(context.Background(), wsReplyContext{reqID: "callback-think"})
+	if err != nil {
+		t.Fatalf("create streaming turn: %v", err)
+	}
+	first := p.FormatStreamingTurnContent([]string{"planning"}, "")
+	second := p.FormatStreamingTurnContent([]string{"planning", "running tool"}, "")
+	final := p.FormatStreamingTurnContent([]string{"planning", "running tool"}, "answer")
+	if err := turn.Update(context.Background(), first); err != nil {
+		t.Fatalf("first update: %v", err)
+	}
+	if err := turn.Update(context.Background(), second); err != nil {
+		t.Fatalf("second update: %v", err)
+	}
+	if err := turn.Finalize(context.Background(), final); err != nil {
+		t.Fatalf("finalize: %v", err)
+	}
+
+	got := receiveStreamingTurnFrames(t, frames, 3)
+	if got[0].Body.Stream.ID != got[1].Body.Stream.ID || got[1].Body.Stream.ID != got[2].Body.Stream.ID {
+		t.Fatalf("think updates restarted stream: %q, %q, %q", got[0].Body.Stream.ID, got[1].Body.Stream.ID, got[2].Body.Stream.ID)
+	}
+	if got[0].Body.Stream.Content != first || got[1].Body.Stream.Content != second || got[2].Body.Stream.Content != final {
+		t.Fatalf("unexpected think snapshots: %q, %q, %q", got[0].Body.Stream.Content, got[1].Body.Stream.Content, got[2].Body.Stream.Content)
+	}
+}
+
 func TestStreamingTurn_OverflowUsesQuotedContinuationStreams(t *testing.T) {
 	p, frames := newStreamingTurnCapture(t, 2)
 	turn, err := p.CreateStreamingTurn(context.Background(), wsReplyContext{reqID: "callback-overflow"})

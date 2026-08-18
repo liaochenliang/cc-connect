@@ -48,6 +48,19 @@ func (t *streamingTurn) Failed() bool {
 	return t.failed.Load()
 }
 
+// FormatStreamingTurnContent keeps intermediate agent activity inside WeCom's
+// native collapsible thinking block while leaving the final answer visible.
+func (p *WSPlatform) FormatStreamingTurnContent(progress []string, answer string) string {
+	if len(progress) == 0 {
+		return answer
+	}
+	content := "<think>\n" + strings.Join(progress, "\n\n---\n\n") + "\n</think>"
+	if answer != "" {
+		content += "\n\n" + answer
+	}
+	return content
+}
+
 func (t *streamingTurn) write(ctx context.Context, content string, final bool) error {
 	if t.Failed() {
 		return fmt.Errorf("wecom-ws: streaming turn already failed")

@@ -16130,6 +16130,14 @@ type recordingStreamingTurnPlatform struct {
 	createCalls int
 }
 
+func (p *recordingStreamingTurnPlatform) FormatStreamingTurnContent(progress []string, answer string) string {
+	content := "<think>\n" + strings.Join(progress, "\n\n---\n\n") + "\n</think>"
+	if answer != "" {
+		content += "\n\n" + answer
+	}
+	return content
+}
+
 func (p *recordingStreamingTurnPlatform) CreateStreamingTurn(_ context.Context, _ any) (StreamingTurn, error) {
 	p.createCalls++
 	return p.turn, nil
@@ -16192,8 +16200,25 @@ func TestProcessInteractiveEvents_StreamingTurnFullModeAggregatesProcessAndFinal
 	if strings.Contains(final, "draft") {
 		t.Fatalf("final stream retained stale draft answer: %q", final)
 	}
+	if !strings.Contains(final, "<think>\n") || !strings.Contains(final, "\n</think>\n\nfinal") {
+		t.Fatalf("streaming turn did not wrap process content in a think block: %q", final)
+	}
 	if sent := p.getSent(); len(sent) != 0 {
 		t.Fatalf("ordinary messages = %#v, want none", sent)
+	}
+}
+
+func TestBuildStreamingTurnContent_LeavesPureAnswerOutsideThinkBlock(t *testing.T) {
+	if got := buildStreamingTurnContent(&stubPlatformEngine{}, nil, "answer"); got != "answer" {
+		t.Fatalf("pure answer content = %q, want answer without think block", got)
+	}
+}
+
+func TestBuildStreamingTurnContent_WithoutFormatterKeepsMarkdown(t *testing.T) {
+	got := buildStreamingTurnContent(&stubPlatformEngine{}, []string{"progress"}, "answer")
+	want := "progress\n\n---\n\nanswer"
+	if got != want {
+		t.Fatalf("default streaming content = %q, want %q", got, want)
 	}
 }
 

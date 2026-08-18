@@ -4498,7 +4498,10 @@ func buildCardContent(thinking string, tools []cardToolEntry, answer string) str
 	return sb.String()
 }
 
-func buildStreamingTurnContent(progress []string, answer string) string {
+func buildStreamingTurnContent(p Platform, progress []string, answer string) string {
+	if formatter, ok := p.(StreamingTurnContentFormatter); ok {
+		return formatter.FormatStreamingTurnContent(progress, answer)
+	}
 	sections := append([]string(nil), progress...)
 	if answer != "" {
 		sections = append(sections, answer)
@@ -4881,7 +4884,7 @@ func (e *Engine) processInteractiveEvents(state *interactiveState, session *Sess
 		}
 		turn := streamTurn
 		streamTurn = nil
-		if err := turn.Finalize(e.ctx, buildStreamingTurnContent(turnProgress, turnAnswerText)); err != nil {
+		if err := turn.Finalize(e.ctx, buildStreamingTurnContent(state.platform, turnProgress, turnAnswerText)); err != nil {
 			slog.Warn("streaming turn cleanup failed", "error", err)
 		}
 	}()
@@ -5074,7 +5077,7 @@ func (e *Engine) processInteractiveEvents(state *interactiveState, session *Sess
 			if e.display.ThinkingMessages && event.Content != "" && streamTurn != nil && !streamTurn.Failed() {
 				preview := truncateIf(event.Content, e.display.ThinkingMaxLen)
 				turnProgress = append(turnProgress, fmt.Sprintf(e.i18n.T(MsgThinking), preview))
-				if err := streamTurn.Update(e.ctx, buildStreamingTurnContent(turnProgress, turnAnswerText)); err != nil {
+				if err := streamTurn.Update(e.ctx, buildStreamingTurnContent(p, turnProgress, turnAnswerText)); err != nil {
 					slog.Warn("streaming turn thinking update failed, falling back to normal messages", "error", err)
 					streamTurn = nil
 				} else {
@@ -5178,7 +5181,7 @@ func (e *Engine) processInteractiveEvents(state *interactiveState, session *Sess
 					streamInput := formatToolInput(event.ToolName, truncateIf(event.ToolInput, e.display.ToolMaxLen))
 					toolMsg := fmt.Sprintf(e.i18n.T(MsgTool), toolCount, event.ToolName, streamInput)
 					turnProgress = append(turnProgress, toolMsg)
-					if err := streamTurn.Update(e.ctx, buildStreamingTurnContent(turnProgress, turnAnswerText)); err != nil {
+					if err := streamTurn.Update(e.ctx, buildStreamingTurnContent(p, turnProgress, turnAnswerText)); err != nil {
 						slog.Warn("streaming turn tool update failed, falling back to normal messages", "error", err)
 						streamTurn = nil
 					} else {
@@ -5289,7 +5292,7 @@ func (e *Engine) processInteractiveEvents(state *interactiveState, session *Sess
 					resultMsg := e.formatToolResultEventFallback(event.ToolName, result, event.ToolStatus, event.ToolExitCode, event.ToolSuccess)
 					if streamTurn != nil && !streamTurn.Failed() {
 						turnProgress = append(turnProgress, resultMsg)
-						if err := streamTurn.Update(e.ctx, buildStreamingTurnContent(turnProgress, turnAnswerText)); err != nil {
+						if err := streamTurn.Update(e.ctx, buildStreamingTurnContent(p, turnProgress, turnAnswerText)); err != nil {
 							slog.Warn("streaming turn tool-result update failed, falling back to normal messages", "error", err)
 							streamTurn = nil
 						} else {
@@ -5359,7 +5362,7 @@ func (e *Engine) processInteractiveEvents(state *interactiveState, session *Sess
 						textParts = append(textParts, content)
 						handledByStream = true
 					} else {
-						if err := streamTurn.Update(e.ctx, buildStreamingTurnContent(turnProgress, nextAnswer)); err != nil {
+						if err := streamTurn.Update(e.ctx, buildStreamingTurnContent(p, turnProgress, nextAnswer)); err != nil {
 							slog.Warn("streaming turn answer update failed, falling back to normal messages", "error", err)
 							streamTurn = nil
 						} else {
@@ -5767,7 +5770,7 @@ func (e *Engine) processInteractiveEvents(state *interactiveState, session *Sess
 				if isSilent {
 					turnBody = strings.TrimRight(turnAnswerText, " \t\r\n")
 				}
-				finalContent := buildStreamingTurnContent(turnProgress, turnBody)
+				finalContent := buildStreamingTurnContent(p, turnProgress, turnBody)
 				turn := streamTurn
 				streamTurn = nil
 				if err := turn.Finalize(e.ctx, finalContent); err != nil {

@@ -134,6 +134,16 @@ func TestStreamingTurn_ReusesCallbackAndStreamIDs(t *testing.T) {
 	}
 }
 
+func TestStreamingTurnContentUsesThinkBlock(t *testing.T) {
+	p := &WSPlatform{}
+	if got := p.FormatStreamingTurnContent([]string{"planning", "running tool"}, "answer"); got != "<think>\nplanning\n\n---\n\nrunning tool\n</think>\n\nanswer" {
+		t.Fatalf("formatted content = %q", got)
+	}
+	if got := p.FormatStreamingTurnContent(nil, "answer"); got != "answer" {
+		t.Fatalf("pure answer content = %q, want answer", got)
+	}
+}
+
 func TestStreamingTurn_OverflowUsesQuotedContinuationStreams(t *testing.T) {
 	p, frames := newStreamingTurnCapture(t, 2)
 	turn, err := p.CreateStreamingTurn(context.Background(), wsReplyContext{reqID: "callback-overflow"})

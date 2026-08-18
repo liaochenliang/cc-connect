@@ -719,6 +719,12 @@ type StreamingTurnPlatform interface {
 	CreateStreamingTurn(ctx context.Context, replyCtx any) (StreamingTurn, error)
 }
 
+// StreamingTurnContentFormatter is an optional interface for platforms that
+// require a platform-specific envelope around streaming-turn process content.
+type StreamingTurnContentFormatter interface {
+	FormatStreamingTurnContent(progress []string, answer string) string
+}
+
 // CardStatus represents the visual status of a card header.
 type CardStatus string
 

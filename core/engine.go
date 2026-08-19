@@ -1471,11 +1471,16 @@ func (e *Engine) ExecuteCronJob(job *CronJob) error {
 	userWorkspaceDir := ""
 	if e.userWorkspace {
 		userWorkspaceDir, err = e.resolveWorkspaceForSessionKey(targetPlatform, sessionKey)
-		if err != nil {
+		if err != nil && job.WorkDir == "" {
 			return fmt.Errorf("resolve cron workspace: %w", err)
 		}
-		if job.WorkDir != "" && normalizeWorkspacePath(job.WorkDir) != userWorkspaceDir {
-			return fmt.Errorf("cron work_dir %q does not match user workspace %q", job.WorkDir, userWorkspaceDir)
+		if job.WorkDir != "" {
+			if !strings.HasPrefix(normalizeWorkspacePath(job.WorkDir), normalizeWorkspacePath(e.baseDir)+"/") {
+				return fmt.Errorf("cron work_dir %q outside base_dir %q", job.WorkDir, e.baseDir)
+			}
+			userWorkspaceDir = normalizeWorkspacePath(job.WorkDir)
+		} else if err != nil {
+			return fmt.Errorf("resolve cron workspace: %w", err)
 		}
 	}
 
@@ -1699,11 +1704,16 @@ func (e *Engine) ExecuteTimerJob(job *TimerJob) error {
 	userWorkspaceDir := ""
 	if e.userWorkspace {
 		userWorkspaceDir, err = e.resolveWorkspaceForSessionKey(targetPlatform, sessionKey)
-		if err != nil {
+		if err != nil && job.WorkDir == "" {
 			return fmt.Errorf("resolve timer workspace: %w", err)
 		}
-		if job.WorkDir != "" && normalizeWorkspacePath(job.WorkDir) != userWorkspaceDir {
-			return fmt.Errorf("timer work_dir %q does not match user workspace %q", job.WorkDir, userWorkspaceDir)
+		if job.WorkDir != "" {
+			if !strings.HasPrefix(normalizeWorkspacePath(job.WorkDir), normalizeWorkspacePath(e.baseDir)+"/") {
+				return fmt.Errorf("timer work_dir %q outside base_dir %q", job.WorkDir, e.baseDir)
+			}
+			userWorkspaceDir = normalizeWorkspacePath(job.WorkDir)
+		} else if err != nil {
+			return fmt.Errorf("resolve timer workspace: %w", err)
 		}
 	}
 

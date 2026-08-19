@@ -37,6 +37,7 @@ type WSPlatform struct {
 	reqSeq      atomic.Int64 // monotonic counter for generating unique req_id
 	missedPong  atomic.Int32 // consecutive heartbeat acks not received
 	pendingAcks sync.Map     // req_id -> chan wsAckResult, for sequential send with ack waiting
+	lastReqIDs  sync.Map     // chat_id -> latest callback req_id, for proactive stream replies
 }
 
 const (
@@ -382,6 +383,7 @@ func (p *WSPlatform) handleMsgCallback(frame wsFrame) {
 	if chatID == "" {
 		chatID = body.From.UserID
 	}
+	p.lastReqIDs.Store(chatID, reqID)
 	rctx := wsReplyContext{
 		reqID:    reqID,
 		chatID:   chatID,
@@ -543,7 +545,11 @@ func (p *WSPlatform) ReconstructReplyCtx(sessionKey string) (any, error) {
 	if len(parts) < 3 || parts[0] != "wecom" {
 		return nil, fmt.Errorf("wecom-ws: invalid session key %q", sessionKey)
 	}
-	return wsReplyContext{chatID: parts[1], userID: parts[2]}, nil
+	var reqID string
+	if v, ok := p.lastReqIDs.Load(parts[1]); ok {
+		reqID, _ = v.(string)
+	}
+	return wsReplyContext{reqID: reqID, chatID: parts[1], userID: parts[2]}, nil
 }
 
 func (p *WSPlatform) Stop() error {

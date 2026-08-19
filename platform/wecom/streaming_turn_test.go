@@ -19,6 +19,7 @@ type capturedStreamingTurnFrame struct {
 		ReqID string `json:"req_id"`
 	} `json:"headers"`
 	Body struct {
+		ChatID  string `json:"chatid"`
 		MsgType string `json:"msgtype"`
 		Stream  struct {
 			ID      string `json:"id"`
@@ -206,7 +207,43 @@ func TestStreamingTurn_OverflowUsesQuotedContinuationStreams(t *testing.T) {
 	}
 }
 
-func TestStreamingTurn_RejectsMissingCallbackRequestID(t *testing.T) {
+func TestStreamingTurn_UsesProactiveSendWithoutCallbackRequestID(t *testing.T) {
+	p, frames := newStreamingTurnCapture(t, 2)
+	turn, err := p.CreateStreamingTurn(context.Background(), wsReplyContext{chatID: "chat-1", userID: "user-1"})
+	if err != nil {
+		t.Fatalf("create streaming turn: %v", err)
+	}
+	if err := turn.Update(context.Background(), "<think>\nplanning\n</think>"); err != nil {
+		t.Fatalf("update streaming turn: %v", err)
+	}
+	if err := turn.Finalize(context.Background(), "<think>\nplanning\n</think>\n\nanswer"); err != nil {
+		t.Fatalf("finalize streaming turn: %v", err)
+	}
+
+	got := receiveStreamingTurnFrames(t, frames, 2)
+	for i, frame := range got {
+		if frame.Cmd != "aibot_send_msg" {
+			t.Fatalf("frame %d cmd = %q, want aibot_send_msg", i, frame.Cmd)
+		}
+		if frame.Headers.ReqID == "" {
+			t.Fatalf("frame %d req_id is empty, want generated request ID", i)
+		}
+		if frame.Body.ChatID != "chat-1" {
+			t.Fatalf("frame %d chatid = %q, want chat-1", i, frame.Body.ChatID)
+		}
+		if frame.Body.MsgType != "stream" {
+			t.Fatalf("frame %d msgtype = %q, want stream", i, frame.Body.MsgType)
+		}
+	}
+	if got[0].Body.Stream.ID == "" || got[1].Body.Stream.ID != got[0].Body.Stream.ID {
+		t.Fatalf("stream IDs = %q, %q, want one stable non-empty ID", got[0].Body.Stream.ID, got[1].Body.Stream.ID)
+	}
+	if got[0].Body.Stream.Finish || !got[1].Body.Stream.Finish {
+		t.Fatalf("finish flags = %v, %v; want false, true", got[0].Body.Stream.Finish, got[1].Body.Stream.Finish)
+	}
+}
+
+func TestStreamingTurn_RejectsContextWithoutReplyTarget(t *testing.T) {
 	p := &WSPlatform{}
 	for _, replyCtx := range []any{"wrong", wsReplyContext{}} {
 		if _, err := p.CreateStreamingTurn(context.Background(), replyCtx); err == nil {

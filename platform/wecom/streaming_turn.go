@@ -14,6 +14,7 @@ const wecomStreamingTurnContentLimit = 20480
 type streamingTurn struct {
 	platform  *WSPlatform
 	reqID     string
+	chatID    string
 	streamID  string
 	committed string
 	active    string
@@ -26,12 +27,17 @@ func (p *WSPlatform) CreateStreamingTurn(_ context.Context, replyCtx any) (core.
 	if !ok {
 		return nil, fmt.Errorf("wecom-ws: invalid streaming turn context type %T", replyCtx)
 	}
-	if rc.reqID == "" {
-		return nil, fmt.Errorf("wecom-ws: streaming turn requires callback req_id")
+	if rc.reqID == "" && rc.chatID == "" {
+		return nil, fmt.Errorf("wecom-ws: streaming turn requires callback req_id or chat_id")
+	}
+	reqID := rc.reqID
+	if reqID == "" {
+		reqID = p.generateReqID("stream-turn")
 	}
 	return &streamingTurn{
 		platform: p,
-		reqID:    rc.reqID,
+		reqID:    reqID,
+		chatID:   rc.chatID,
 		streamID: p.generateReqID("stream"),
 	}, nil
 }
@@ -126,15 +132,20 @@ func (t *streamingTurn) send(ctx context.Context, content string, finish bool) e
 	frame := map[string]any{
 		"cmd":     "aibot_respond_msg",
 		"headers": map[string]string{"req_id": t.reqID},
-		"body": map[string]any{
-			"msgtype": "stream",
-			"stream": map[string]any{
-				"id":      t.streamID,
-				"finish":  finish,
-				"content": content,
-			},
+	}
+	body := map[string]any{
+		"msgtype": "stream",
+		"stream": map[string]any{
+			"id":      t.streamID,
+			"finish":  finish,
+			"content": content,
 		},
 	}
+	if t.chatID != "" {
+		frame["cmd"] = "aibot_send_msg"
+		body["chatid"] = t.chatID
+	}
+	frame["body"] = body
 	return t.platform.writeAndWaitAckStrict(ctx, frame, t.reqID, wsAckTimeout)
 }
 

@@ -1471,11 +1471,16 @@ func (e *Engine) ExecuteCronJob(job *CronJob) error {
 	userWorkspaceDir := ""
 	if e.userWorkspace {
 		userWorkspaceDir, err = e.resolveWorkspaceForSessionKey(targetPlatform, sessionKey)
-		if err != nil {
+		if err != nil && job.WorkDir == "" {
 			return fmt.Errorf("resolve cron workspace: %w", err)
 		}
-		if job.WorkDir != "" && normalizeWorkspacePath(job.WorkDir) != userWorkspaceDir {
-			return fmt.Errorf("cron work_dir %q does not match user workspace %q", job.WorkDir, userWorkspaceDir)
+		if job.WorkDir != "" {
+			if !strings.HasPrefix(normalizeWorkspacePath(job.WorkDir), normalizeWorkspacePath(e.baseDir)+"/") {
+				return fmt.Errorf("cron work_dir %q outside base_dir %q", job.WorkDir, e.baseDir)
+			}
+			userWorkspaceDir = normalizeWorkspacePath(job.WorkDir)
+		} else if err != nil {
+			return fmt.Errorf("resolve cron workspace: %w", err)
 		}
 	}
 
@@ -1699,11 +1704,16 @@ func (e *Engine) ExecuteTimerJob(job *TimerJob) error {
 	userWorkspaceDir := ""
 	if e.userWorkspace {
 		userWorkspaceDir, err = e.resolveWorkspaceForSessionKey(targetPlatform, sessionKey)
-		if err != nil {
+		if err != nil && job.WorkDir == "" {
 			return fmt.Errorf("resolve timer workspace: %w", err)
 		}
-		if job.WorkDir != "" && normalizeWorkspacePath(job.WorkDir) != userWorkspaceDir {
-			return fmt.Errorf("timer work_dir %q does not match user workspace %q", job.WorkDir, userWorkspaceDir)
+		if job.WorkDir != "" {
+			if !strings.HasPrefix(normalizeWorkspacePath(job.WorkDir), normalizeWorkspacePath(e.baseDir)+"/") {
+				return fmt.Errorf("timer work_dir %q outside base_dir %q", job.WorkDir, e.baseDir)
+			}
+			userWorkspaceDir = normalizeWorkspacePath(job.WorkDir)
+		} else if err != nil {
+			return fmt.Errorf("resolve timer workspace: %w", err)
 		}
 	}
 
@@ -4498,6 +4508,17 @@ func buildCardContent(thinking string, tools []cardToolEntry, answer string) str
 	return sb.String()
 }
 
+func buildStreamingTurnContent(p Platform, progress []string, answer string) string {
+	if formatter, ok := p.(StreamingTurnContentFormatter); ok {
+		return formatter.FormatStreamingTurnContent(progress, answer)
+	}
+	sections := append([]string(nil), progress...)
+	if answer != "" {
+		sections = append(sections, answer)
+	}
+	return strings.Join(sections, "\n\n---\n\n")
+}
+
 // unsolicitedReaderStopTimeout bounds how long stopUnsolicitedReader waits
 // for the reader goroutine to exit. The reader is structured so its iterations
 // are short (blocking adapter calls like RespondPermission are offloaded), so
@@ -4836,25 +4857,52 @@ func (e *Engine) processInteractiveEvents(state *interactiveState, session *Sess
 		return e.sendWithErrorForWorkspace(p, replyCtx, content, workspaceDir)
 	}
 
+	// Streaming turn: aggregate process events and answer into one updatable reply.
+	var streamTurn StreamingTurn
+	var turnProgress []string
+	var turnRawAnswerText string
+	var turnAnswerText string
+	if e.display.Mode == "full" {
+		if stp, ok := state.platform.(StreamingTurnPlatform); ok {
+			if turn, err := stp.CreateStreamingTurn(e.ctx, state.replyCtx); err != nil {
+				slog.Warn("streaming turn creation failed, falling back to normal messages", "error", err)
+			} else {
+				streamTurn = turn
+			}
+		}
+	}
+
 	// Streaming card: aggregate entire turn into a single updatable card.
 	var streamCard StreamingCard
 	var cardToolCalls []cardToolEntry  // track tool calls for card content
 	var cardThinkingText string        // latest thinking text
 	var cardAnswerText strings.Builder // accumulated answer text
 
-	if scp, ok := state.platform.(StreamingCardPlatform); ok {
-		if sc, err := scp.CreateStreamingCard(e.ctx, state.replyCtx); err != nil {
-			slog.Warn("streaming card creation failed, falling back to normal messages", "error", err)
-		} else {
-			streamCard = sc
-			slog.Info("streaming card created for turn", "session", sessionKey)
+	if streamTurn == nil {
+		if scp, ok := state.platform.(StreamingCardPlatform); ok {
+			if sc, err := scp.CreateStreamingCard(e.ctx, state.replyCtx); err != nil {
+				slog.Warn("streaming card creation failed, falling back to normal messages", "error", err)
+			} else {
+				streamCard = sc
+				slog.Info("streaming card created for turn", "session", sessionKey)
+			}
 		}
 	}
+	defer func() {
+		if streamTurn == nil || streamTurn.Failed() {
+			return
+		}
+		turn := streamTurn
+		streamTurn = nil
+		if err := turn.Finalize(e.ctx, buildStreamingTurnContent(state.platform, turnProgress, turnAnswerText)); err != nil {
+			slog.Warn("streaming turn cleanup failed", "error", err)
+		}
+	}()
 	sp := newStreamPreview(e.streamPreview, state.platform, state.replyCtx, e.ctx, workspaceRenderer)
 	cp := newCompactProgressWriter(e.ctx, state.platform, state.replyCtx, e.agent.Name(), e.i18n.CurrentLang(), workspaceRenderer)
 	state.mu.Unlock()
 
-	if !instantReplySent && e.instantReply.Enabled && streamCard == nil {
+	if !instantReplySent && e.instantReply.Enabled && streamTurn == nil && streamCard == nil {
 		replyContent := e.instantReply.Content
 		if replyContent == "" {
 			replyContent = e.i18n.T(MsgStarting)
@@ -5036,6 +5084,16 @@ func (e *Engine) processInteractiveEvents(state *interactiveState, session *Sess
 			if isEllipsisOnly(event.Content) {
 				break
 			}
+			if e.display.ThinkingMessages && event.Content != "" && streamTurn != nil && !streamTurn.Failed() {
+				preview := truncateIf(event.Content, e.display.ThinkingMaxLen)
+				turnProgress = append(turnProgress, fmt.Sprintf(e.i18n.T(MsgThinking), preview))
+				if err := streamTurn.Update(e.ctx, buildStreamingTurnContent(p, turnProgress, turnAnswerText)); err != nil {
+					slog.Warn("streaming turn thinking update failed, falling back to normal messages", "error", err)
+					streamTurn = nil
+				} else {
+					continue
+				}
+			}
 			if hasRichCard {
 				// When thinking messages are suppressed, skip card creation.
 				if !e.display.ThinkingMessages {
@@ -5126,6 +5184,21 @@ func (e *Engine) processInteractiveEvents(state *interactiveState, session *Sess
 
 		case EventToolUse:
 			toolCount++
+			formattedInput := ""
+			if e.display.ToolMessages {
+				formattedInput = formatToolInput(event.ToolName, event.ToolInput)
+				if streamTurn != nil && !streamTurn.Failed() {
+					streamInput := formatToolInput(event.ToolName, truncateIf(event.ToolInput, e.display.ToolMaxLen))
+					toolMsg := fmt.Sprintf(e.i18n.T(MsgTool), toolCount, event.ToolName, streamInput)
+					turnProgress = append(turnProgress, toolMsg)
+					if err := streamTurn.Update(e.ctx, buildStreamingTurnContent(p, turnProgress, turnAnswerText)); err != nil {
+						slog.Warn("streaming turn tool update failed, falling back to normal messages", "error", err)
+						streamTurn = nil
+					} else {
+						continue
+					}
+				}
+			}
 			if hasRichCard {
 				// When tool messages are suppressed, skip card updates on tool events.
 				if !e.display.ToolMessages {
@@ -5181,23 +5254,6 @@ func (e *Engine) processInteractiveEvents(state *interactiveState, session *Sess
 			if e.display.ToolMessages {
 				// --- StreamingCard path ---
 				if streamCard != nil && !streamCard.Failed() {
-					toolInput := event.ToolInput
-					var formattedInput string
-					if toolInput == "" {
-						formattedInput = ""
-					} else if strings.Contains(toolInput, "```") {
-						formattedInput = toolInput
-					} else if strings.Contains(toolInput, "\n") || utf8.RuneCountInString(toolInput) > 200 {
-						lang := toolCodeLang(event.ToolName, toolInput)
-						formattedInput = fmt.Sprintf("```%s\n%s\n```", lang, toolInput)
-					} else {
-						switch event.ToolName {
-						case "shell", "run_shell_command", "Bash":
-							formattedInput = fmt.Sprintf("```bash\n%s\n```", toolInput)
-						default:
-							formattedInput = fmt.Sprintf("`%s`", toolInput)
-						}
-					}
 					cardToolCalls = append(cardToolCalls, cardToolEntry{
 						Index: toolCount,
 						Name:  event.ToolName,
@@ -5225,25 +5281,8 @@ func (e *Engine) processInteractiveEvents(state *interactiveState, session *Sess
 				if previewActive {
 					sp.detachPreview() // keep frozen preview visible as permanent message
 				}
-				toolInput := event.ToolInput
-				var formattedInput string
-				if toolInput == "" {
-					formattedInput = ""
-				} else if strings.Contains(toolInput, "```") {
-					formattedInput = toolInput
-				} else if strings.Contains(toolInput, "\n") || utf8.RuneCountInString(toolInput) > 200 {
-					lang := toolCodeLang(event.ToolName, toolInput)
-					formattedInput = fmt.Sprintf("```%s\n%s\n```", lang, toolInput)
-				} else {
-					switch event.ToolName {
-					case "shell", "run_shell_command", "Bash":
-						formattedInput = fmt.Sprintf("```bash\n%s\n```", toolInput)
-					default:
-						formattedInput = fmt.Sprintf("`%s`", toolInput)
-					}
-				}
 				toolMsg := fmt.Sprintf(e.i18n.T(MsgTool), toolCount, event.ToolName, formattedInput)
-				if !cp.AppendEvent(ProgressEntryToolUse, toolInput, event.ToolName, toolMsg) {
+				if !cp.AppendEvent(ProgressEntryToolUse, event.ToolInput, event.ToolName, toolMsg) {
 					for _, chunk := range SplitMessageCodeFenceAware(toolMsg, maxPlatformMessageLen) {
 						sendWorkspace(p, replyCtx, chunk)
 					}
@@ -5260,6 +5299,16 @@ func (e *Engine) processInteractiveEvents(state *interactiveState, session *Sess
 					result = truncateIf(result, e.display.ToolMaxLen)
 				}
 				if result != "" || event.ToolStatus != "" || event.ToolExitCode != nil || event.ToolSuccess != nil {
+					resultMsg := e.formatToolResultEventFallback(event.ToolName, result, event.ToolStatus, event.ToolExitCode, event.ToolSuccess)
+					if streamTurn != nil && !streamTurn.Failed() {
+						turnProgress = append(turnProgress, resultMsg)
+						if err := streamTurn.Update(e.ctx, buildStreamingTurnContent(p, turnProgress, turnAnswerText)); err != nil {
+							slog.Warn("streaming turn tool-result update failed, falling back to normal messages", "error", err)
+							streamTurn = nil
+						} else {
+							continue
+						}
+					}
 					if hasRichCard {
 						toolSteps = mergeRichToolResult(toolSteps, event, result, e.display.ToolMaxLen)
 						if cardMessageID == nil {
@@ -5280,7 +5329,6 @@ func (e *Engine) processInteractiveEvents(state *interactiveState, session *Sess
 						}
 						break
 					}
-					resultMsg := e.formatToolResultEventFallback(event.ToolName, result, event.ToolStatus, event.ToolExitCode, event.ToolSuccess)
 					entry := ProgressCardEntry{
 						Kind:     ProgressEntryToolResult,
 						Tool:     event.ToolName,
@@ -5315,8 +5363,27 @@ func (e *Engine) processInteractiveEvents(state *interactiveState, session *Sess
 				silentHold = couldBeSilentPrefix(peekSegment)
 				releasedNow := prevHold && !silentHold
 
-				handledByStreamCard := false
-				if streamCard != nil && !streamCard.Failed() {
+				handledByStream := false
+				if streamTurn != nil && !streamTurn.Failed() {
+					nextRawAnswer := turnRawAnswerText + content
+					nextAnswer := withoutTrailingSilentPrefix(nextRawAnswer)
+					if nextAnswer == turnAnswerText {
+						turnRawAnswerText = nextRawAnswer
+						textParts = append(textParts, content)
+						handledByStream = true
+					} else {
+						if err := streamTurn.Update(e.ctx, buildStreamingTurnContent(p, turnProgress, nextAnswer)); err != nil {
+							slog.Warn("streaming turn answer update failed, falling back to normal messages", "error", err)
+							streamTurn = nil
+						} else {
+							turnRawAnswerText = nextRawAnswer
+							turnAnswerText = nextAnswer
+							textParts = append(textParts, content)
+							handledByStream = true
+						}
+					}
+				}
+				if !handledByStream && streamCard != nil && !streamCard.Failed() {
 					textParts = append(textParts, content) // always accumulate for history
 					if !silentHold {
 						if releasedNow {
@@ -5326,9 +5393,9 @@ func (e *Engine) processInteractiveEvents(state *interactiveState, session *Sess
 						}
 						_ = streamCard.Update(e.ctx, buildCardContent(cardThinkingText, cardToolCalls, cardAnswerText.String()))
 					}
-					handledByStreamCard = true
+					handledByStream = true
 				}
-				if !handledByStreamCard {
+				if !handledByStream {
 					if len(textParts) == 0 {
 						if hasRichCard {
 							if cardMessageID == nil && !silentHold {
@@ -5706,8 +5773,31 @@ func (e *Engine) processInteractiveEvents(state *interactiveState, session *Sess
 
 			replyStart := time.Now()
 
-			// --- StreamingCard path ---
-			if streamCard != nil && !streamCard.Failed() {
+			// --- StreamingTurn path ---
+			if streamTurn != nil && !streamTurn.Failed() {
+				sp.finish("", "")
+				turnBody := fullResponse
+				if isSilent {
+					turnBody = strings.TrimRight(turnAnswerText, " \t\r\n")
+				}
+				finalContent := buildStreamingTurnContent(p, turnProgress, turnBody)
+				turn := streamTurn
+				streamTurn = nil
+				if err := turn.Finalize(e.ctx, finalContent); err != nil {
+					slog.Error("streaming turn finalize failed, sending fallback", "error", err)
+					if !isSilent {
+						for _, chunk := range splitMessage(fullResponse, maxPlatformMessageLen) {
+							if err := sendWorkspaceWithError(p, replyCtx, chunk); err != nil {
+								return
+							}
+						}
+					}
+				}
+				if isSilent {
+					slog.Info("silent reply suppressed", "session", session.ID)
+				}
+				// --- StreamingCard path ---
+			} else if streamCard != nil && !streamCard.Failed() {
 				sp.finish("", "") // cleanup preview (should be no-op if card was active)
 				// Silent reply: never render the NO_REPLY marker into the card.
 				// cardAnswerText holds only the text streamed BEFORE the marker
@@ -6000,21 +6090,37 @@ func (e *Engine) processInteractiveEvents(state *interactiveState, session *Sess
 				cp = newCompactProgressWriter(e.ctx, queued.platform, queued.replyCtx, e.agent.Name(), e.i18n.CurrentLang(), queuedRenderer)
 
 				// Reset streaming card state for the next turn
+				streamTurn = nil
+				turnProgress = nil
+				turnRawAnswerText = ""
+				turnAnswerText = ""
 				streamCard = nil
 				cardToolCalls = nil
 				cardThinkingText = ""
 				cardAnswerText.Reset()
 
-				// Try to create a new streaming card for the queued turn
-				if scp, ok := queued.platform.(StreamingCardPlatform); ok {
-					if sc, err := scp.CreateStreamingCard(e.ctx, queued.replyCtx); err != nil {
-						slog.Warn("streaming card creation failed for queued turn", "error", err)
-					} else {
-						streamCard = sc
+				if e.display.Mode == "full" {
+					if stp, ok := queued.platform.(StreamingTurnPlatform); ok {
+						if turn, err := stp.CreateStreamingTurn(e.ctx, queued.replyCtx); err != nil {
+							slog.Warn("streaming turn creation failed for queued turn", "error", err)
+						} else {
+							streamTurn = turn
+						}
 					}
 				}
 
-				if !instantReplySent && e.instantReply.Enabled && streamCard == nil {
+				// Try to create a new streaming card for the queued turn
+				if streamTurn == nil {
+					if scp, ok := queued.platform.(StreamingCardPlatform); ok {
+						if sc, err := scp.CreateStreamingCard(e.ctx, queued.replyCtx); err != nil {
+							slog.Warn("streaming card creation failed for queued turn", "error", err)
+						} else {
+							streamCard = sc
+						}
+					}
+				}
+
+				if !instantReplySent && e.instantReply.Enabled && streamTurn == nil && streamCard == nil {
 					replyContent := e.instantReply.Content
 					if replyContent == "" {
 						replyContent = e.i18n.T(MsgStarting)
@@ -15636,6 +15742,20 @@ func (e *Engine) deleteSessionDisplayName(sessions *SessionManager, matched *Age
 	return displayName
 }
 
+// formatToolInput wraps tool input in a suitable Markdown code span or block.
+func formatToolInput(toolName, input string) string {
+	if input == "" || strings.Contains(input, "```") {
+		return input
+	}
+	if strings.Contains(input, "\n") || utf8.RuneCountInString(input) > 200 {
+		return fmt.Sprintf("```%s\n%s\n```", toolCodeLang(toolName, input), input)
+	}
+	if toolName == "shell" || toolName == "run_shell_command" || toolName == "Bash" {
+		return fmt.Sprintf("```bash\n%s\n```", input)
+	}
+	return fmt.Sprintf("`%s`", input)
+}
+
 // toolCodeLang picks the code block language hint for tool display.
 func toolCodeLang(toolName, input string) string {
 	switch toolName {
@@ -17046,6 +17166,29 @@ func couldBeSilentPrefix(text string) bool {
 		return true
 	}
 	return strings.HasPrefix("NO_REPLY", strings.ToUpper(t))
+}
+
+// withoutTrailingSilentPrefix withholds a trailing partial NO_REPLY marker so
+// a full-replacement stream never flashes the marker before final suppression.
+func withoutTrailingSilentPrefix(text string) string {
+	const marker = "NO_REPLY"
+	trimmed := strings.TrimRight(text, " \t\r\n")
+	upper := strings.ToUpper(trimmed)
+	for n := len(marker); n > 0; n-- {
+		prefix := marker[:n]
+		if !strings.HasSuffix(upper, prefix) {
+			continue
+		}
+		start := len(trimmed) - len(prefix)
+		if start == 0 {
+			return ""
+		}
+		boundary, _ := utf8.DecodeLastRuneInString(trimmed[:start])
+		if unicode.IsSpace(boundary) || boundary == '*' {
+			return text[:start]
+		}
+	}
+	return text
 }
 
 func isEllipsisOnly(text string) bool {

@@ -16083,3 +16083,266 @@ func TestProcessInteractiveEvents_StreamingCard_BareNoReply_Suppressed(t *testin
 		t.Fatalf("silent reply leaked NO_REPLY into the streaming card: %q", card.finalContent())
 	}
 }
+
+type recordingStreamingTurn struct {
+	mu         sync.Mutex
+	updates    []string
+	final      string
+	finalized  int
+	failUpdate bool
+}
+
+func (t *recordingStreamingTurn) Update(_ context.Context, content string) error {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	if t.failUpdate {
+		return errors.New("stream update failed")
+	}
+	t.updates = append(t.updates, content)
+	return nil
+}
+
+func (t *recordingStreamingTurn) Finalize(_ context.Context, content string) error {
+	t.mu.Lock()
+	t.final = content
+	t.finalized++
+	t.mu.Unlock()
+	return nil
+}
+
+func (t *recordingStreamingTurn) Failed() bool { return false }
+
+func (t *recordingStreamingTurn) snapshot() ([]string, string) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	return append([]string(nil), t.updates...), t.final
+}
+
+func (t *recordingStreamingTurn) finalizeCount() int {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	return t.finalized
+}
+
+type recordingStreamingTurnPlatform struct {
+	stubPlatformEngine
+	turn        *recordingStreamingTurn
+	createCalls int
+}
+
+func (p *recordingStreamingTurnPlatform) FormatStreamingTurnContent(progress []string, answer string) string {
+	content := "<think>\n" + strings.Join(progress, "\n\n---\n\n") + "\n</think>"
+	if answer != "" {
+		content += "\n\n" + answer
+	}
+	return content
+}
+
+func (p *recordingStreamingTurnPlatform) CreateStreamingTurn(_ context.Context, _ any) (StreamingTurn, error) {
+	p.createCalls++
+	return p.turn, nil
+}
+
+func runStreamingTurnEvents(t *testing.T, mode string, p *recordingStreamingTurnPlatform, events ...Event) {
+	t.Helper()
+	e := NewEngine("test", &stubAgent{}, []Platform{p}, "", LangEnglish)
+	e.SetDisplayConfig(DisplayCfg{
+		Mode:             mode,
+		ThinkingMessages: mode == "full",
+		ThinkingMaxLen:   300,
+		ToolMaxLen:       500,
+		ToolMessages:     mode == "full",
+	})
+	sessionKey := "streaming-turn:user"
+	session := e.sessions.GetOrCreateActive(sessionKey)
+	agentSession := newControllableSession("streaming-turn-session")
+	state := &interactiveState{agentSession: agentSession, platform: p, replyCtx: "reply-context"}
+	e.interactiveStates[sessionKey] = state
+	for _, event := range events {
+		agentSession.events <- event
+	}
+	e.processInteractiveEvents(state, session, e.sessions, sessionKey, "message-1", time.Now(), nil, nil, state.replyCtx)
+}
+
+func TestProcessInteractiveEvents_StreamingTurnFullModeAggregatesProcessAndFinalAnswer(t *testing.T) {
+	turn := &recordingStreamingTurn{}
+	p := &recordingStreamingTurnPlatform{
+		stubPlatformEngine: stubPlatformEngine{n: "capability-test"},
+		turn:               turn,
+	}
+
+	runStreamingTurnEvents(t, "full", p,
+		Event{Type: EventThinking, Content: "plan"},
+		Event{Type: EventToolUse, ToolName: "Bash", ToolInput: "pwd"},
+		Event{Type: EventToolResult, ToolName: "Bash", ToolResult: "/tmp"},
+		Event{Type: EventText, Content: "draft"},
+		Event{Type: EventResult, Content: "final", Done: true},
+	)
+
+	updates, final := turn.snapshot()
+	if p.createCalls != 1 {
+		t.Fatalf("CreateStreamingTurn calls = %d, want 1", p.createCalls)
+	}
+	if len(updates) != 4 {
+		t.Fatalf("updates = %d, want 4: %#v", len(updates), updates)
+	}
+	positions := []int{
+		strings.Index(final, "💭 plan"),
+		strings.Index(final, "Tool #1: Bash"),
+		strings.Index(final, "/tmp"),
+		strings.Index(final, "final"),
+	}
+	for i, position := range positions {
+		if position < 0 || i > 0 && position <= positions[i-1] {
+			t.Fatalf("streaming turn sections out of order in %q", final)
+		}
+	}
+	if strings.Contains(final, "draft") {
+		t.Fatalf("final stream retained stale draft answer: %q", final)
+	}
+	if !strings.Contains(final, "<think>\n") || !strings.Contains(final, "\n</think>\n\nfinal") {
+		t.Fatalf("streaming turn did not wrap process content in a think block: %q", final)
+	}
+	if sent := p.getSent(); len(sent) != 0 {
+		t.Fatalf("ordinary messages = %#v, want none", sent)
+	}
+}
+
+func TestBuildStreamingTurnContent_LeavesPureAnswerOutsideThinkBlock(t *testing.T) {
+	if got := buildStreamingTurnContent(&stubPlatformEngine{}, nil, "answer"); got != "answer" {
+		t.Fatalf("pure answer content = %q, want answer without think block", got)
+	}
+}
+
+func TestBuildStreamingTurnContent_WithoutFormatterKeepsMarkdown(t *testing.T) {
+	got := buildStreamingTurnContent(&stubPlatformEngine{}, []string{"progress"}, "answer")
+	want := "progress\n\n---\n\nanswer"
+	if got != want {
+		t.Fatalf("default streaming content = %q, want %q", got, want)
+	}
+}
+
+func TestProcessInteractiveEvents_StreamingTurnAppliesDisplayLimits(t *testing.T) {
+	turn := &recordingStreamingTurn{}
+	p := &recordingStreamingTurnPlatform{
+		stubPlatformEngine: stubPlatformEngine{n: "capability-test"},
+		turn:               turn,
+	}
+	longThinking := strings.Repeat("t", 301)
+	longToolInput := strings.Repeat("i", 501)
+	longToolResult := strings.Repeat("r", 501)
+	runStreamingTurnEvents(t, "full", p,
+		Event{Type: EventThinking, Content: longThinking},
+		Event{Type: EventToolUse, ToolName: "Read", ToolInput: longToolInput},
+		Event{Type: EventToolResult, ToolName: "Read", ToolResult: longToolResult},
+		Event{Type: EventResult, Content: "done", Done: true},
+	)
+
+	_, final := turn.snapshot()
+	for _, untruncated := range []string{longThinking, longToolInput, longToolResult} {
+		if strings.Contains(final, untruncated) {
+			t.Fatalf("streaming turn did not apply display limit: %q", final)
+		}
+	}
+}
+
+func TestProcessInteractiveEvents_StreamingTurnDisabledOutsideFullMode(t *testing.T) {
+	for _, mode := range []string{"compact", "quiet"} {
+		t.Run(mode, func(t *testing.T) {
+			p := &recordingStreamingTurnPlatform{
+				stubPlatformEngine: stubPlatformEngine{n: "capability-test"},
+				turn:               &recordingStreamingTurn{},
+			}
+			runStreamingTurnEvents(t, mode, p,
+				Event{Type: EventText, Content: "answer"},
+				Event{Type: EventResult, Content: "answer", Done: true},
+			)
+			if p.createCalls != 0 {
+				t.Fatalf("CreateStreamingTurn calls = %d, want 0", p.createCalls)
+			}
+			if sent := p.getSent(); len(sent) != 1 || sent[0] != "answer" {
+				t.Fatalf("ordinary messages = %#v, want [answer]", sent)
+			}
+		})
+	}
+}
+
+func TestProcessInteractiveEvents_StreamingTurnUpdateFailureFallsBack(t *testing.T) {
+	p := &recordingStreamingTurnPlatform{
+		stubPlatformEngine: stubPlatformEngine{n: "capability-test"},
+		turn:               &recordingStreamingTurn{failUpdate: true},
+	}
+	runStreamingTurnEvents(t, "full", p,
+		Event{Type: EventThinking, Content: "plan"},
+		Event{Type: EventResult, Content: "answer", Done: true},
+	)
+
+	sent := p.getSent()
+	if len(sent) == 0 || sent[len(sent)-1] != "answer" {
+		t.Fatalf("ordinary fallback messages = %#v, want final answer", sent)
+	}
+}
+
+func TestProcessInteractiveEvents_StreamingTurnBareNoReplyDoesNotLeakMarker(t *testing.T) {
+	turn := &recordingStreamingTurn{}
+	p := &recordingStreamingTurnPlatform{
+		stubPlatformEngine: stubPlatformEngine{n: "capability-test"},
+		turn:               turn,
+	}
+	runStreamingTurnEvents(t, "full", p,
+		Event{Type: EventThinking, Content: "plan"},
+		Event{Type: EventText, Content: "NO_REPLY"},
+		Event{Type: EventResult, Content: "NO_REPLY", Done: true},
+	)
+
+	_, final := turn.snapshot()
+	if strings.Contains(final, "NO_REPLY") {
+		t.Fatalf("silent marker leaked into streaming turn: %q", final)
+	}
+	if sent := p.getSent(); len(sent) != 0 {
+		t.Fatalf("ordinary messages = %#v, want none", sent)
+	}
+}
+
+func TestProcessInteractiveEvents_StreamingTurnTrailingNoReplyNeverStreamsMarker(t *testing.T) {
+	turn := &recordingStreamingTurn{}
+	p := &recordingStreamingTurnPlatform{
+		stubPlatformEngine: stubPlatformEngine{n: "capability-test"},
+		turn:               turn,
+	}
+	runStreamingTurnEvents(t, "full", p,
+		Event{Type: EventText, Content: "Hello\nNO_"},
+		Event{Type: EventText, Content: "REPLY"},
+		Event{Type: EventResult, Content: "Hello\nNO_REPLY", Done: true},
+	)
+
+	updates, final := turn.snapshot()
+	for _, update := range updates {
+		if strings.Contains(update, "NO_") {
+			t.Fatalf("trailing silent marker leaked into streaming update: %q", update)
+		}
+	}
+	if strings.Contains(final, "NO_REPLY") || !strings.Contains(final, "Hello") {
+		t.Fatalf("unexpected finalized trailing-silent content: %q", final)
+	}
+}
+
+func TestProcessInteractiveEvents_StreamingTurnFinalizesOnAgentError(t *testing.T) {
+	turn := &recordingStreamingTurn{}
+	p := &recordingStreamingTurnPlatform{
+		stubPlatformEngine: stubPlatformEngine{n: "capability-test"},
+		turn:               turn,
+	}
+	runStreamingTurnEvents(t, "full", p,
+		Event{Type: EventThinking, Content: "plan"},
+		Event{Type: EventError, Error: errors.New("agent failed")},
+	)
+
+	if turn.finalizeCount() != 1 {
+		t.Fatalf("Finalize calls = %d, want 1", turn.finalizeCount())
+	}
+	_, final := turn.snapshot()
+	if !strings.Contains(final, "plan") {
+		t.Fatalf("finalized error turn lost visible process: %q", final)
+	}
+}

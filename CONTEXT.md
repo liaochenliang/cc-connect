@@ -31,3 +31,7 @@ _Avoid_: Server Codex, source Codex, chat Codex
 **Execution Agent**:
 The coding agent that receives a delegated command in the Jenkins-side environment and starts the requested Jenkins work.
 _Avoid_: Jenkins Codex, remote Codex, target Codex
+
+**Internal Command**:
+A slash-prefixed command handled by CC-Connect itself instead of being forwarded to the Agent.
+_Avoid_: cc-connect command

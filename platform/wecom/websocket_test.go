@@ -286,6 +286,42 @@ func TestHandleMsgCallback_GroupChat_ChatIDPreserved(t *testing.T) {
 	}
 }
 
+func TestReconstructReplyCtx_ReusesLatestCallbackReqID(t *testing.T) {
+	p, captured := newCapturedWSPlatform()
+
+	body := wsMsgCallbackBody{
+		MsgID:    "msg_req_cache",
+		ChatID:   "group_chat_id_123",
+		ChatType: "group",
+		MsgType:  "text",
+	}
+	body.From.UserID = "zhangsan"
+	body.Text.Content = "hello"
+	body.CreateTime = time.Now().Unix()
+
+	p.handleMsgCallback(wsCallbackFrame(t, "req_reuse", body))
+	select {
+	case <-captured:
+	case <-time.After(1 * time.Second):
+		t.Fatal("handler not called")
+	}
+
+	rctx, err := p.ReconstructReplyCtx("wecom:group_chat_id_123:zhangsan")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	rc := rctx.(wsReplyContext)
+	if rc.reqID != "req_reuse" {
+		t.Fatalf("expected reqID 'req_reuse', got %q", rc.reqID)
+	}
+	if rc.chatID != "group_chat_id_123" || rc.userID != "zhangsan" {
+		t.Fatalf("unexpected context: %+v", rc)
+	}
+	if _, err := p.CreateStreamingTurn(context.Background(), rctx); err != nil {
+		t.Fatalf("CreateStreamingTurn with reconstructed context: %v", err)
+	}
+}
+
 func TestHandleMsgCallback_RepliesToUnauthorizedSender(t *testing.T) {
 	serverDone := make(chan error, 1)
 	upgrader := websocket.Upgrader{}

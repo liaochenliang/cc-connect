@@ -1,9 +1,14 @@
 package wecom
 
-import "unicode/utf8"
+import (
+	"strings"
+	"unicode/utf8"
+)
 
 // splitByBytes splits text under a UTF-8 byte limit. It prefers readable
 // boundaries before falling back to byte-safe hard cuts.
+// It is think-tag aware: if a <think>...</think> block is split across
+// chunks, each chunk is closed/reopened so no chunk loses the tag.
 func splitByBytes(s string, maxBytes int) []string {
 	if len(s) <= maxBytes || maxBytes <= 0 {
 		return []string{s}
@@ -12,13 +17,55 @@ func splitByBytes(s string, maxBytes int) []string {
 	parts := make([]string, 0, len(s)/maxBytes+1)
 	for len(s) > maxBytes {
 		cut := semanticByteCut(s, maxBytes)
+		// Avoid cutting inside a <think> / </think> tag.
+		if tagCut := avoidThinkTagCut(s, cut); tagCut != cut {
+			cut = tagCut
+		}
 		parts = append(parts, s[:cut])
 		s = s[cut:]
 	}
 	if s != "" {
 		parts = append(parts, s)
 	}
-	return parts
+	return fixThinkTags(parts)
+}
+
+const thinkOpen = "<think>"
+const thinkClose = "</think>"
+
+// avoidThinkTagCut shifts cut so we never split inside "<think>" or "</think>".
+func avoidThinkTagCut(s string, cut int) int {
+	// If cut lands inside a tag, move cut to tag start.
+	lastOpen := strings.LastIndex(s[:cut], "<")
+	if lastOpen == -1 {
+		return cut
+	}
+	tail := s[lastOpen:cut]
+	// Incomplete open/close tag (no '>').
+	if !strings.Contains(tail, ">") {
+		return lastOpen
+	}
+	return cut
+}
+
+// fixThinkTags ensures every chunk that is inside a <think> block is
+// wrapped with the tag so WeCom rendering does not lose the label.
+func fixThinkTags(chunks []string) []string {
+	balance := 0 // net <think> - </think> from original chunks
+	for i := range chunks {
+		origOpen := strings.Count(chunks[i], thinkOpen)
+		origClose := strings.Count(chunks[i], thinkClose)
+		prepend := balance > 0
+		balance += origOpen - origClose
+		appendClose := balance > 0
+		if prepend {
+			chunks[i] = thinkOpen + "\n" + chunks[i]
+		}
+		if appendClose {
+			chunks[i] = chunks[i] + "\n" + thinkClose
+		}
+	}
+	return chunks
 }
 
 func semanticByteCut(s string, maxBytes int) int {
